@@ -88,6 +88,7 @@
   }
 
   function renderGraph(){
+    hideTip();
     const svg=$('graphSvg'); if(!svg)return;
     const graph=state.data.graph||{};
     const allNodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
@@ -224,6 +225,7 @@
       el.addEventListener('mouseleave',hideTip);
       el.addEventListener('click',e=>{
         e.stopPropagation();
+        hideTip();
         state.selected=el.dataset.id;
         state.focused=el.dataset.id;
         state.positions={};
