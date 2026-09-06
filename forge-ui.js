@@ -106,74 +106,109 @@
       nodes=allNodes.filter(n=>keep.has(n.id));
     }
 
-    // Neural-network presentation: arrange the visible neighbourhood in layers.
-    // Real analyzer edges remain highlighted.
-    const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
-    const rawMax=Math.max(0,...rawRanks);
-    const layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
-    nodes.forEach(n=>{n.visualLayer=rawMax===0?0:Math.min(layerCount-1,Math.round((Number(n.rank)||0)/rawMax*(layerCount-1)));});
-
-    const byLayer=new Map();
-    nodes.forEach(n=>{
-      if(!byLayer.has(n.visualLayer))byLayer.set(n.visualLayer,[]);
-      byLayer.get(n.visualLayer).push(n);
-    });
-    [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>String(x.label||'').localeCompare(String(y.label||''))));
-
-    const left=95,right=1105,top=72,bottom=628;
-    for(let layer=0;layer<layerCount;layer++){
-      const arr=byLayer.get(layer)||[];
-      const x=layerCount===1?600:left+(layer/Math.max(1,layerCount-1))*(right-left);
-      const gap=(bottom-top)/Math.max(1,arr.length-1);
-      arr.forEach((n,i)=>{state.positions[n.id]={x,y:arr.length===1?350:top+i*gap};});
-    }
-
+    // Neural-network presentation.
+    // Focus mode places the selected file in the center with explicit
+    // inbound/source and outbound/destination columns.
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
     const realEdges=allEdges.filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
 
-    text('graphInfo',(state.focused?'FOCUS // ':'')+nodes.length+' NODES / '+realEdges.length+' DATA LINKS');
+    let byLayer=new Map();
+    let layerCount=3;
+    if(state.focused){
+      const incoming=nodes.filter(n=>n.id!==state.focused && realEdges.some(e=>e.target===state.focused&&e.source===n.id));
+      const outgoing=nodes.filter(n=>n.id!==state.focused && realEdges.some(e=>e.source===state.focused&&e.target===n.id));
+      const center=by[state.focused];
+      const both=incoming.filter(n=>outgoing.some(x=>x.id===n.id));
+      const columns=[
+        incoming.filter(n=>!both.some(x=>x.id===n.id)),
+        [center],
+        outgoing.filter(n=>!both.some(x=>x.id===n.id))
+      ];
+      columns[0].push(...both);
+      byLayer.set(0,columns[0]); byLayer.set(1,columns[1]); byLayer.set(2,columns[2]);
+
+      const xs=[170,600,1030],top=80,bottom=620;
+      columns.forEach((arr,idx)=>{
+        const gap=(bottom-top)/Math.max(1,arr.length-1);
+        arr.forEach((n,i)=>{state.positions[n.id]={x:xs[idx],y:arr.length===1?350:top+i*gap};});
+      });
+
+      const incomingCount=realEdges.filter(e=>e.target===state.focused).length;
+      const outgoingCount=realEdges.filter(e=>e.source===state.focused).length;
+      text('graphInfo','FILE FOCUS // '+incomingCount+' IN / '+outgoingCount+' OUT');
+      text('hudDepth','03');
+      text('hudBlast',String(incomingCount+outgoingCount).padStart(2,'0'));
+    } else {
+      const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
+      const rawMax=Math.max(0,...rawRanks);
+      layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
+      nodes.forEach(n=>{n.visualLayer=rawMax===0?0:Math.min(layerCount-1,Math.round((Number(n.rank)||0)/rawMax*(layerCount-1)));});
+      nodes.forEach(n=>{
+        if(!byLayer.has(n.visualLayer))byLayer.set(n.visualLayer,[]);
+        byLayer.get(n.visualLayer).push(n);
+      });
+      [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>String(x.label||'').localeCompare(String(y.label||''))));
+      const left=95,right=1105,top=72,bottom=628;
+      for(let layer=0;layer<layerCount;layer++){
+        const arr=byLayer.get(layer)||[];
+        const x=layerCount===1?600:left+(layer/Math.max(1,layerCount-1))*(right-left);
+        const gap=(bottom-top)/Math.max(1,arr.length-1);
+        arr.forEach((n,i)=>{state.positions[n.id]={x,y:arr.length===1?350:top+i*gap};});
+      }
+      text('graphInfo',nodes.length+' NODES / '+realEdges.length+' DATA LINKS');
+      text('hudDepth',String(layerCount).padStart(2,'0'));
+      text('hudBlast',String(state.data.intelligence?.impact?.blast_radius||0).padStart(2,'0'));
+    }
+
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(realEdges.length).padStart(2,'0'));
-    text('hudDepth',String(layerCount).padStart(2,'0'));
-    text('hudMode',state.focused?'FOCUS':'FULL NETWORK');
-    text('hudBlast',String(state.data.intelligence?.impact?.blast_radius||0).padStart(2,'0'));
+    text('hudMode',state.focused?'FILE FOCUS':'FULL NETWORK');
 
     const defs='<defs>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d8fbff"/></marker>'+
+      '<marker id="arrowIn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7de2ff"/></marker>'+
+      '<marker id="arrowOut" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e9fdff"/></marker>'+
       '</defs>';
 
-    const labels=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
-    const guides=Array.from({length:layerCount},(_,layer)=>{
+    const labels=state.focused?['INBOUND / SOURCES','FOCUS','OUTBOUND / DESTINATIONS']:['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
+    const guideCount=state.focused?3:layerCount;
+    const guides=Array.from({length:guideCount},(_,layer)=>{
       const arr=byLayer.get(layer)||[];
-      const x=arr.length?state.positions[arr[0].id].x:left+(layer/Math.max(1,layerCount-1))*(right-left);
+      const x=arr.length?state.positions[arr[0].id].x:600;
       return '<line class="layerGuide" x1="'+x+'" y1="38" x2="'+x+'" y2="662"/>'+
              '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
-    // Complete adjacent-layer network: do not discard or cap connections.
-    const dense=[];
-    let denseIndex=0;
-    for(let layer=0;layer<layerCount-1;layer++){
-      const sourceLayer=byLayer.get(layer)||[],targetLayer=byLayer.get(layer+1)||[];
-      sourceLayer.forEach(s=>{
-        targetLayer.forEach(t=>{
+    let dense='';
+    if(!state.focused){
+      const parts=[];let denseIndex=0;
+      for(let layer=0;layer<layerCount-1;layer++){
+        const sourceLayer=byLayer.get(layer)||[],targetLayer=byLayer.get(layer+1)||[];
+        sourceLayer.forEach(s=>targetLayer.forEach(t=>{
           const p=state.positions[s.id],q=state.positions[t.id];
-          const d='M'+p.x+','+p.y+' L'+q.x+','+q.y;
-          dense.push('<path class="denseEdge dense-'+(denseIndex%5)+'" d="'+d+'"/>');
+          parts.push('<path class="denseEdge dense-'+(denseIndex%5)+'" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');
           denseIndex++;
-        });
-      });
+        }));
+      }
+      dense=parts.join('');
     }
 
     const real=realEdges.map((e,i)=>{
-      const s=by[e.source],t=by[e.target];
-      const p=state.positions[s.id],q=state.positions[t.id];
-      const bend=Math.max(12,Math.min(55,Math.abs(q.y-p.y)*.06));
+      const s=by[e.source],t=by[e.target],p=state.positions[s.id],q=state.positions[t.id];
+      if(!p||!q)return '';
+      const focusedIncoming=state.focused&&e.target===state.focused;
+      const focusedOutgoing=state.focused&&e.source===state.focused;
+      const bidirectional=state.focused&&focusedIncoming&&realEdges.some(x=>x.source===e.target&&x.target===e.source);
+      const bend=state.focused?Math.max(10,Math.min(46,Math.abs(q.y-p.y)*.05)):Math.max(12,Math.min(55,Math.abs(q.y-p.y)*.06));
       const mid=(p.x+q.x)/2;
       const d='M'+p.x+','+p.y+' C'+mid+','+(p.y-bend)+' '+mid+','+(q.y+bend)+' '+q.x+','+q.y;
-      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
-             '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%19)*.07)+'s;display:'+(state.fx?'block':'none')+'"/>';
+      const marker=focusedIncoming?'url(#arrowIn)':'url(#arrowOut)';
+      const cls=(focusedIncoming?' inbound':focusedOutgoing?' outbound':'')+(bidirectional?' bidirectional':'');
+      const relation=bidirectional?'BIDIRECTIONAL':(focusedIncoming?'IN':'OUT');
+      return '<path class="edge '+esc(e.kind)+cls+'" d="'+d+'" marker-end="'+marker+'"/>'+
+             '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%19)*.07)+'s;display:'+(state.fx?'block':'none')+'"/>'+
+             (state.focused?'<text class="directionLabel '+(focusedIncoming?'inLabel':'outLabel')+'" x="'+mid+'" y="'+((p.y+q.y)/2-5)+'">'+relation+'</text>':'');
     }).join('');
+
 
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const ns=nodes.map(n=>{
