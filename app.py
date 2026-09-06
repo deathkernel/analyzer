@@ -3,6 +3,10 @@ import json
 import socket
 import threading
 import time
+import subprocess
+import tempfile
+import shutil
+import sys
 import traceback
 import webbrowser
 from collections import Counter
@@ -151,7 +155,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error":"not found","path":p},404)
         except Exception as exc:return self.send_json({"error":f"{type(exc).__name__}: {exc}"},500)
 
+def github_project(url):
+    if not (url.startswith("https://github.com/") or url.startswith("http://github.com/") or url.startswith("git@github.com:")):
+        raise ValueError("Only GitHub repository URLs are supported.")
+    base=Path(tempfile.mkdtemp(prefix="forge-github-"))
+    target=base/"repository"
+    print(f"FORGE // cloning {url}")
+    try:
+        subprocess.run(
+            ["git","clone","--depth","1","--no-tags",url,str(target)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+    except FileNotFoundError:
+        shutil.rmtree(base,ignore_errors=True)
+        raise RuntimeError("Git is not installed or not available on PATH.")
+    except subprocess.CalledProcessError as exc:
+        output=(exc.stdout or "").strip()
+        shutil.rmtree(base,ignore_errors=True)
+        raise RuntimeError("GitHub clone failed"+(": "+output[-500:] if output else "."))
+    return target,base
+
 def choose_project():
+
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -165,8 +193,19 @@ def choose_project():
 
 def main():
     global FORGE
-    project=choose_project()
-    if not project.exists() or not project.is_dir():raise SystemExit(f"Invalid project folder: {project}")
+    temp_workspace=None
+
+    # Optional remote mode: python app.py --github <repo-url>
+    if len(sys.argv)>=3 and sys.argv[1].lower()=="--github":
+        try:
+            project,temp_workspace=github_project(sys.argv[2])
+        except Exception as exc:
+            raise SystemExit(f"FORGE // {exc}")
+    else:
+        project=choose_project()
+
+    if not project.exists() or not project.is_dir():
+        raise SystemExit(f"Invalid project folder: {project}")
     port=pick_port();FORGE=Forge(project)
     threading.Thread(target=FORGE.watch,daemon=True,name="forge-watcher").start()
     server=ThreadingHTTPServer((HOST,port),Handler);url=f"http://{HOST}:{port}"
@@ -175,6 +214,10 @@ def main():
     except Exception:pass
     try:server.serve_forever()
     except KeyboardInterrupt:print("\nFORGE // shutting down")
-    finally:FORGE.live=False;server.server_close()
+    finally:
+        FORGE.live=False
+        server.server_close()
+        if temp_workspace:
+            shutil.rmtree(temp_workspace,ignore_errors=True)
 
 if __name__=="__main__":main()
