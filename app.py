@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs,unquote,urlparse
 
 from scanner import source_files,read_text,rel,analyze
-from graph_engine import build_graph,graph_metrics
+from graph_engine import build_graph,graph_metrics,intelligence_report
 
 HOST="127.0.0.1"
 DEFAULT_PORT=8765
@@ -45,7 +45,7 @@ class Forge:
                     "stats":{"files":0,"lines":0,"functions":0,"classes":0,"imports":0,"bytes":0},
                     "languages":{},"issues":[],"shortages":[],"bugs":[],"summary":{"total":0,"critical":0,"high":0,"medium":0,"low":0},
                     "dna":{"complexity":100,"coupling":100,"duplication":100,"security":100,"maintainability":100,"architecture":"EMPTY"},
-                    "security":[],"graph":{"nodes":[],"edges":[],"metrics":{}},"files":[],
+                    "security":[],"graph":{"nodes":[],"edges":[],"metrics":{}},"intelligence":{"cycles":[],"cycle_count":0,"impact":{"focused":None,"upstream":[],"downstream":[],"blast_radius":0},"xray":{"roles":{},"entrypoints":[],"data_nodes":0,"flows":[]},"dead_code":[]},"files":[],
                     "tests":{"files":[],"coverage_proxy":0,"count":0},"history":[],"activity":[],"error":None}
         self.history=[];self.activity=[];self.snapshot={};self.live=True
 
@@ -70,6 +70,7 @@ class Forge:
         try:
             result=analyze(self.project);files_abs=[self.project/x["path"] for x in result["files"]]
             contents={f:read_text(f) for f in files_abs};nodes,edges=build_graph(self.project,files_abs,contents);gm=graph_metrics(nodes,edges)
+            intel=intelligence_report(nodes,edges,contents)
             issues=result["issues"];sev=Counter(result["severity"]);self.scan_id+=1;tests=result["tests"]
             test_ratio=round(100*len(tests)/max(1,len(result["files"])),1)
             history_item={"scan":self.scan_id,"time":stamp(),"health":result["health"],"issues":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0)}
@@ -84,7 +85,7 @@ class Forge:
                     "summary":{"total":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0),"medium":sev.get("MEDIUM",0),"low":sev.get("LOW",0)},
                     "dna":result["dna"],
                     "security":[x for x in issues if x["type"] in {"SECRET","DANGEROUS_EXEC","COMMAND_EXEC","SQL_INJECTION","DOM_XSS","UNSAFE_DESERIALIZE","PASSWORD_LITERAL"}],
-                    "graph":{"nodes":nodes,"edges":edges,"metrics":gm},"files":result["files"],
+                    "graph":{"nodes":nodes,"edges":edges,"metrics":gm},"intelligence":intel,"files":result["files"],
                     "tests":{"files":tests,"coverage_proxy":test_ratio,"count":len(tests)},
                     "history":list(self.history),"activity":list(self.activity),"error":None,
                 })
