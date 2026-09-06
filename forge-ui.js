@@ -225,7 +225,7 @@
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="denseEdges">'+dense.join('')+'</g><g class="actualEdges">'+real+'</g>'+ns;
+    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="denseEdges">'+dense+'</g><g class="actualEdges">'+real+'</g>'+ns;
     bindNodes();
   }
 
