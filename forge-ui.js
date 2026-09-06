@@ -279,7 +279,8 @@
     const guides=Array.from({length:guideCount},(_,layer)=>{
       const arr=byLayer.get(layer)||[];
       const fallback=state.focused?[155,600,1045][layer]:95+(layer/Math.max(1,layerCount-1))*1010;
-      const x=arr.length?state.positions[arr[0].id].x:fallback;
+      const firstPos=arr.length?state.positions[arr[0].id]:null;
+      const x=firstPos&&Number.isFinite(firstPos.x)?firstPos.x:fallback;
       return '<line class="layerGuide" x1="'+x+'" y1="38" x2="'+x+'" y2="662"/>'+
              '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
@@ -287,8 +288,10 @@
     // No synthetic edges: render only real analyzer-detected relationships.
 
     const real=realEdges.map((e,i)=>{
-      const s=by[e.source],t=by[e.target],p=state.positions[s.id],q=state.positions[t.id];
-      if(!p||!q)return '';
+      const s=by[e.source],t=by[e.target];
+      if(!s||!t)return '';
+      const p=state.positions[s.id]||{x:600,y:350};
+      const q=state.positions[t.id]||{x:600,y:350};
       const focusedIncoming=state.focused&&e.target===state.focused;
       const focusedOutgoing=state.focused&&e.source===state.focused;
       const bidirectional=state.focused&&focusedIncoming&&realEdges.some(x=>x.source===e.target&&x.target===e.source);
@@ -306,7 +309,7 @@
 
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const ns=nodes.map(n=>{
-      const p=state.positions[n.id],degree=Number(n.degree||0),hot=state.hot&&degree===maxDegree&&degree>0;
+      const p=state.positions[n.id]||{x:600,y:350},degree=Number(n.degree||0),hot=state.hot&&degree===maxDegree&&degree>0;
       const radius=n.role==='entrypoint'?10:7;
       return '<g class="node '+esc(String(n.role||'module').toLowerCase())+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
         '<circle class="halo" r="'+(hot?22:15)+'"/>'+
