@@ -444,3 +444,32 @@ body:has(#graph.activeTab) .graph-intel .intelTags span{
 body:has(#graph.activeTab) .graph-intel .intelAlert{color:#ffafbf;padding:7px;border:1px solid #ff526f33;background:#ff526f08}
 body:has(#graph.activeTab) .graph-intel .intelOk{color:#65e0ad;padding:8px;border:1px solid #45f0a422;background:#45f0a406}
 @media(max-width:800px){body:has(#graph.activeTab) .graph-intel{left:10px;right:10px;top:55px;width:auto;max-height:60vh}}
+
+/* DIRECTIONAL FILE FOCUS */
+body:has(#graph.activeTab) .graphbox .directionLabel{
+  font:6px Consolas;
+  letter-spacing:1.6px;
+  text-anchor:middle;
+  pointer-events:none;
+  paint-order:stroke;
+  stroke:#02080d;
+  stroke-width:3px;
+  stroke-opacity:.9;
+}
+body:has(#graph.activeTab) .graphbox .inLabel{fill:#62dfff}
+body:has(#graph.activeTab) .graphbox .outLabel{fill:#e8fdff}
+body:has(#graph.activeTab) .graphbox .edge.inbound{
+  stroke:#5ddfff!important;
+  stroke-width:1.7!important;
+  opacity:.82!important;
+}
+body:has(#graph.activeTab) .graphbox .edge.outbound{
+  stroke:#f1ffff!important;
+  stroke-width:1.9!important;
+  opacity:.92!important;
+}
+body:has(#graph.activeTab) .graphbox .edge.bidirectional{
+  stroke:#c5f7ff!important;
+  stroke-width:2.1!important;
+  opacity:1!important;
+}
