@@ -43,17 +43,14 @@ class Forge:
         self.lock = threading.RLock()
         self.scan_id = 0
         self.state = {
-            "project": str(self.project),
-            "watching": False,
-            "scan": 0,
-            "duration_ms": 0,
+            "project": str(self.project), "watching": False, "scan": 0, "duration_ms": 0,
             "health": 100,
             "stats": {"files": 0, "lines": 0, "functions": 0, "classes": 0, "imports": 0, "bytes": 0},
             "languages": {}, "issues": [], "shortages": [], "bugs": [],
             "summary": {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0},
             "dna": {"complexity": 100, "coupling": 100, "duplication": 100, "security": 100, "maintainability": 100, "architecture": "EMPTY"},
             "security": [], "graph": {"nodes": [], "edges": [], "metrics": {}}, "files": [],
-            "tests": {"files": [], "coverage_proxy": 0, "count": 0}, "history": [], "activity": []
+            "tests": {"files": [], "coverage_proxy": 0, "count": 0}, "history": [], "activity": [], "error": None,
         }
         self.history = []
         self.activity = []
@@ -108,7 +105,7 @@ class Forge:
                     "security": [x for x in issues if x["type"] in {"SECRET", "DANGEROUS_EXEC", "COMMAND_EXEC", "SQL_INJECTION", "DOM_XSS", "UNSAFE_DESERIALIZE", "PASSWORD_LITERAL"}],
                     "graph": {"nodes": nodes, "edges": edges, "metrics": gm}, "files": result["files"],
                     "tests": {"files": tests, "coverage_proxy": test_ratio, "count": len(tests)},
-                    "history": list(self.history), "activity": list(self.activity)
+                    "history": list(self.history), "activity": list(self.activity), "error": None,
                 })
             self.snapshot = self.snap()
             self.emit(f'SCAN #{self.scan_id:03d} // {len(result["files"])} files // health {result["health"]}')
@@ -169,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
         raw = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -183,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.static("index.html", "text/html; charset=utf-8")
             if p == "/style.css":
                 return self.static("style.css", "text/css; charset=utf-8")
+            if p == "/forge-ui.js":
+                return self.static("forge-ui.js", "application/javascript; charset=utf-8")
             if p == "/api/state":
                 with FORGE.lock:
                     return self.send_json(dict(FORGE.state))
@@ -208,9 +207,7 @@ def choose_project():
     try:
         import tkinter as tk
         from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
+        root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
         selected = filedialog.askdirectory(title="PROJECT FORGE // Select project folder")
         root.destroy()
         if selected:
@@ -234,20 +231,11 @@ def main():
     threading.Thread(target=FORGE.watch, daemon=True, name="forge-watcher").start()
     server = ThreadingHTTPServer((HOST, port), Handler)
     url = f"http://{HOST}:{port}"
-    print("=" * 62)
-    print("PROJECT FORGE // LOCAL CODE INTELLIGENCE")
-    print(f"TARGET : {project}")
-    print(f"UI     : {url}")
-    print("STOP   : Ctrl+C")
-    print("=" * 62)
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nFORGE // shutting down")
+    print("=" * 62); print("PROJECT FORGE // LOCAL CODE INTELLIGENCE"); print(f"TARGET : {project}"); print(f"UI     : {url}"); print("STOP   : Ctrl+C"); print("=" * 62)
+    try: webbrowser.open(url)
+    except Exception: pass
+    try: server.serve_forever()
+    except KeyboardInterrupt: print("\nFORGE // shutting down")
     finally:
         FORGE.live = False
         server.server_close()
