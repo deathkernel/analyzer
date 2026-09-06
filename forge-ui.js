@@ -240,7 +240,7 @@
       text('graphInfo','FULL FILE NETWORK // '+nodes.length+' NODES // '+realEdges.length+' LINKS');
       text('hudDepth',String(Math.max(maxIn,maxOut)).padStart(2,'0'));
       text('hudBlast',String(Math.max(0,nodes.length-1)).padStart(2,'0'));
-    }    } else {
+    } else {
       const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
       const rawMax=Math.max(0,...rawRanks);
       layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
