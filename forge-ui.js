@@ -110,7 +110,7 @@
     // Focus mode keeps the selected file as the core and renders its full
     // one-hop network with explicit source -> core -> destination flow.
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    const realEdges=allEdges.filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
+    const realEdges=(state.focused?allEdges:allEdges.filter(edgeVisible)).filter(e=>by[e.source]&&by[e.target]);
 
     let byLayer=new Map();
     let layerCount=6;
