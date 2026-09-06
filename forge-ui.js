@@ -89,69 +89,97 @@
 
   function renderGraph(){
     const svg=$('graphSvg'); if(!svg)return;
-    const graph=state.data.graph||{}; 
+    const graph=state.data.graph||{};
     const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
-    const edges=(graph.edges||[]).filter(edgeVisible).filter(e=>{
-      const a=nodes.find(n=>n.id===e.source),b=nodes.find(n=>n.id===e.target);
-      return !!a&&!!b;
+    const actualEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>{
+      const s=nodes.some(n=>n.id===e.source),t=nodes.some(n=>n.id===e.target);
+      return s&&t;
     });
-    text('graphInfo',nodes.length+' NODES / '+edges.length+' EDGES');
+
+    // Group nodes into deterministic left-to-right layers.
+    const byRank=new Map();
+    nodes.forEach(n=>{
+      const r=Math.max(0,Number(n.rank)||0);
+      if(!byRank.has(r))byRank.set(r,[]);
+      byRank.get(r).push(n);
+    });
+    [...byRank.values()].forEach(arr=>arr.sort((a,b)=>String(a.label||'').localeCompare(String(b.label||''))));
+    const ranks=[...byRank.keys()].sort((a,b)=>a-b);
+    const maxRank=Math.max(0,...ranks);
+
+    // Use the neural-network presentation as the base layout.
+    const usableLeft=90, usableRight=1110, usableTop=95, usableBottom=610;
+    ranks.forEach((r,idx)=>{
+      const arr=byRank.get(r)||[];
+      const x=ranks.length<=1?600:usableLeft+(idx/(ranks.length-1))*(usableRight-usableLeft);
+      const gap=(usableBottom-usableTop)/Math.max(1,arr.length-1);
+      arr.forEach((n,i)=>{
+        const y=arr.length===1?350:usableTop+i*gap;
+        state.positions[n.id]={x,y};
+      });
+    });
+
+    text('graphInfo',nodes.length+' NODES / '+actualEdges.length+' EDGES');
     text('hudNodes',String(nodes.length).padStart(2,'0'));
-    text('hudEdges',String(edges.length).padStart(2,'0'));
-    const maxRank=Math.max(0,...nodes.map(n=>Number(n.rank)||0));
-    text('hudDepth',String(maxRank+1).padStart(2,'0'));
+    text('hudEdges',String(actualEdges.length).padStart(2,'0'));
+    text('hudDepth',String(ranks.length).padStart(2,'0'));
     text('hudMode',state.mode.toUpperCase());
 
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    nodes.forEach(n=>{
-      if(!state.positions[n.id])state.positions[n.id]={x:Number(n.x)||100,y:Number(n.y)||100};
-    });
-
     const defs='<defs>'+
-      '<filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
-      '<filter id="strongGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d7fbff"/></marker>'+
+      '<filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9fbff"/></marker>'+
       '</defs>';
 
-    const layerNames=['ENTRY','SERVICES','LOGIC','DATA','VIEWS','ASSETS','MODULES','OUTPUT'];
-    const usableW=1040, left=80, step=maxRank>0?usableW/maxRank:0;
-    const guides=[];
-    for(let r=0;r<=maxRank;r++){
-      const x=left+r*step;
-      guides.push('<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
-                  '<text class="layerLabel" x="'+x+'" y="24">'+esc(layerNames[r]||('LAYER '+String(r+1).padStart(2,'0')))+'</text>');
-    }
-    const layerMarkup='<g class="layerGuides">'+guides.join('')+'</g>';
-
-    const paths=edges.map((e,i)=>{
-      const a=by[e.source],b=by[e.target]; if(!a||!b)return '';
-      const p=state.positions[a.id],q=state.positions[b.id];
-      const same=Math.abs(Number(a.rank||0)-Number(b.rank||0))===0;
-      const mx=(p.x+q.x)/2;
-      const bend=same?18:Math.min(80,Math.max(24,Math.abs(q.y-p.y)*.16));
-      const d='M'+p.x+','+p.y+' C'+mx+','+(p.y-bend)+' '+mx+','+(q.y+bend)+' '+q.x+','+q.y;
-      const d2='M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y;
-      const relation=e.relation||e.kind||'LINK';
-      return '<path class="edge '+esc(e.kind)+'" d="'+d2+'" marker-end="url(#arrow)"/>'+
-             '<path class="stream streamA" d="'+d+'" style="animation-delay:-'+((i%13)*.11)+'s;display:'+(state.fx?'block':'none')+'"/>'+
-             (i%5===0?'<text class="edgeLabel" x="'+(mx+4)+'" y="'+((p.y+q.y)/2-4)+'">'+esc(String(relation).toUpperCase())+'</text>':'');
+    const layerNames=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
+    const guides=ranks.map((r,idx)=>{
+      const arr=byRank.get(r)||[];
+      const x=state.positions[arr[0]?.id]?.x||600;
+      const label=layerNames[idx]||('LAYER '+String(idx+1).padStart(2,'0'));
+      return '<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
+             '<text class="layerLabel" x="'+x+'" y="25">'+esc(label)+'</text>';
     }).join('');
 
+    // Ghost links create the recognizable neural-network structure even when
+    // static analysis cannot infer every semantic dependency.
+    const ghost=[];
+    for(let i=0;i<ranks.length-1;i++){
+      const left=byRank.get(ranks[i])||[],right=byRank.get(ranks[i+1])||[];
+      left.forEach((s,si)=>{
+        right.forEach((t,ti)=>{
+          const density=(si+ti+i)%3!==0;
+          if(!density)return;
+          const p=state.positions[s.id],q=state.positions[t.id];
+          ghost.push('<path class="ghostEdge" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');
+        });
+      });
+    }
+
+    const actual=actualEdges.map((e,i)=>{
+      const s=by[e.source],t=by[e.target];if(!s||!t)return '';
+      const p=state.positions[s.id],q=state.positions[t.id];
+      const bend=Math.max(25,Math.min(90,Math.abs(q.x-p.x)*.12));
+      const dir=q.x>=p.x?1:-1;
+      const d='M'+p.x+','+p.y+' C'+(p.x+bend*dir)+','+p.y+' '+(q.x-bend*dir)+','+q.y+' '+q.x+','+q.y;
+      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
+             '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%9)*.12)+'s;display:'+(state.fx?'block':'none')+'"/>';
+    }).join('');
+
+    const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const ns=nodes.map(n=>{
       const p=state.positions[n.id],degree=Number(n.degree||0);
-      const hot=state.hot&&degree===Math.max(0,...nodes.map(x=>Number(x.degree)||0))&&degree>0;
-      const size=n.role==='entrypoint'?11:8;
-      const role=String(n.role||'module').replace(/[^a-z0-9_-]/gi,'').toLowerCase();
-      return '<g class="node '+esc(role)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
-        '<circle class="halo" r="'+(hot?26:18)+'"/>'+
-        '<circle class="core" r="'+size+'"/>'+
-        '<circle class="ring" r="'+(hot?32:14)+'"/>'+
-        '<text class="name" y="25">'+esc(String(n.label||'').length>22?String(n.label).slice(0,21)+'…':n.label)+'</text>'+
-        '<text class="type" y="35">'+esc((n.role||n.language||'MODULE').toUpperCase())+' · '+esc(degree)+'</text>'+
+      const hot=state.hot&&degree===maxDegree&&degree>0;
+      const radius=n.role==='entrypoint'?11:8;
+      return '<g class="node '+esc(String(n.role||'module').toLowerCase())+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
+        '<circle class="halo" r="'+(hot?24:17)+'"/>'+
+        '<circle class="core" r="'+radius+'"/>'+
+        '<circle class="ring" r="'+(hot?29:13)+'"/>'+
+        '<text class="name" y="23">'+esc(String(n.label||'').length>20?String(n.label).slice(0,19)+'…':n.label)+'</text>'+
+        '<text class="type" y="34">'+esc(String(n.role||n.language||'MODULE').toUpperCase())+' · '+esc(degree)+'</text>'+
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+layerMarkup+paths+ns;
+    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="ghostEdges">'+ghost.join('')+'</g><g class="actualEdges">'+actual+'</g>'+ns;
     bindNodes();
   }
 
