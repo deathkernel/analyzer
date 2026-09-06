@@ -181,7 +181,6 @@
              '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
-    let dense='';
     if(!state.focused){
       const parts=[];let di=0;
       for(let layer=0;layer<layerCount-1;layer++){
@@ -225,7 +224,7 @@
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="denseEdges">'+dense+'</g><g class="actualEdges">'+real+'</g>'+ns;
+    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="actualEdges">'+real+'</g>'+ns;
     bindNodes();
   }
 
