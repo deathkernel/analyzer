@@ -3,15 +3,32 @@
 
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, focused:null, positions:{}, drag:null, renderQueued:false };
+  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, focused:null, positions:{}, drag:null, renderQueued:false, serverOffline:false, lastErrorKey:'' };
 
   function text(id, value) { const el=$(id); if(el) el.textContent=String(value ?? ''); }
   function html(id, value) { const el=$(id); if(el) el.innerHTML=value; }
-  function showError(title, detail) {
-    console.error('[FORGE]', title, detail);
+  function clearError(){
+    const box=$('forgeError');
+    if(box)box.remove();
+    state.serverOffline=false;
+    state.lastErrorKey='';
+  }
+
+  function showError(title, detail){
+    const key=String(title)+'|'+String(detail||'');
+    if(key===state.lastErrorKey)return;
+    state.lastErrorKey=key;
+    state.serverOffline=title==='Cannot reach Forge server';
+    console.error('[FORGE]',title,detail);
     let box=$('forgeError');
-    if(!box){ box=document.createElement('div'); box.id='forgeError'; box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:9999;max-width:520px;padding:14px 16px;border:1px solid #ff526f;background:#180810ee;color:#ffd9df;font:11px Consolas,monospace;box-shadow:0 0 35px #000'; document.body.appendChild(box); }
-    box.innerHTML='<b style="color:#ff7d91">FORGE UI ERROR</b><div style="margin-top:6px">'+esc(title)+'</div><small style="display:block;margin-top:5px;color:#ffb6c1">'+esc(detail)+'</small>';
+    if(!box){
+      box=document.createElement('div');
+      box.id='forgeError';
+      box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:9999;max-width:520px;padding:14px 16px;border:1px solid #ff526f;background:#180810ee;color:#ffd9df;font:11px Consolas,monospace;box-shadow:0 0 35px #000;pointer-events:none';
+      document.body.appendChild(box);
+    }
+    box.innerHTML='<b style="color:#ff7d91">'+esc(title)+'</b><div style="margin-top:6px">'+esc(detail||'')+'</div>'+
+      '<small style="display:block;margin-top:5px;color:#ffb6c1">'+(state.serverOffline?'Waiting for the local Forge server…':'')+'</small>';
   }
 
   async function api(path) {
@@ -310,7 +327,7 @@
   }
   async function refresh(){
     try{
-      const d=await api('/api/state'); state.data=d;
+      const d=await api('/api/state'); state.data=d; clearError();
       text('project',d.project);text('watch',d.watching?'WATCHING':'STOPPED');text('scan','#'+String(d.scan||0).padStart(3,'0'));text('ms',(d.duration_ms||0)+' ms');
       const s=d.stats||{},sum=d.summary||{}; text('files',s.files||0);text('sfiles',s.files||0);text('lines',Number(s.lines||0).toLocaleString());text('functions',s.functions||0);text('classes',s.classes||0);text('imports',s.imports||0);text('total',sum.total||0);text('health',d.health??100);text('gapcount',String((d.shortages||[]).length).padStart(2,'0'));text('bugcount',String((d.bugs||[]).length).padStart(2,'0'));text('sev',(sum.critical||0)+' CRITICAL / '+(sum.high||0)+' HIGH');text('arch','ARCHITECTURE: '+(d.dna?.architecture||'—'));
       html('gaps',(d.shortages||[]).length?d.shortages.map(issueCard).join(''):'<div class="empty">✓ NO ROOT PROBLEMS DETECTED</div>');
@@ -318,7 +335,11 @@
       html('activity',(d.activity||[]).map(x=>'<div>› '+esc(x)+'</div>').join('')||'<div class="empty">Waiting for telemetry...</div>');
       renderDNA();renderFiles();renderSecurity();renderHistory();renderGraph();
       if(d.error)showError('Backend scan error',d.error);
-    }catch(e){text('watch','OFFLINE');showError('Cannot reach Forge server',e.message);}
+    }catch(e){
+      text('watch','OFFLINE');
+      const message=e?.message==='Failed to fetch' ? 'Local Forge server is unreachable.' : e.message;
+      showError('Cannot reach Forge server',message);
+    }
   }
 
   function init(){
