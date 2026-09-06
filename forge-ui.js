@@ -258,13 +258,23 @@
   }
   function showImpact(){
     if(!state.focused){intelPanel('IMPACT ANALYSIS','<p>Select a node first.</p>');return;}
-    const x=state.data.intelligence?.impact||{}, up=x.upstream||[], down=x.downstream||[];
+    const graph=state.data.graph||{}, edges=(graph.edges||[]).filter(e=>e.kind!=='contains');
+    const nodes=graph.nodes||[], labels=Object.fromEntries(nodes.map(n=>[n.id,n.path||n.label||n.id]));
+    const incoming=new Set(),outgoing=new Set();
+    edges.forEach(e=>{
+      if(e.target===state.focused)incoming.add(e.source);
+      if(e.source===state.focused)outgoing.add(e.target);
+    });
+    const up=[...incoming].map(id=>labels[id]||id).sort();
+    const down=[...outgoing].map(id=>labels[id]||id).sort();
+    const blast=new Set([...incoming,...outgoing]).size;
     const li=a=>a.length?a.map(v=>'<li>'+esc(v)+'</li>').join(''):'<li>NONE</li>';
-    intelPanel('IMPACT // '+esc(x.focused||'FILE'),
-      '<div class="intelMetric"><b>'+esc(x.blast_radius||0)+'</b><span>BLAST RADIUS</span></div>'+
-      '<section><small>UPSTREAM</small><ul>'+li(up)+'</ul></section>'+
-      '<section><small>DOWNSTREAM</small><ul>'+li(down)+'</ul></section>');
+    intelPanel('IMPACT // '+esc(labels[state.focused]||state.focused),
+      '<div class="intelMetric"><b>'+blast+'</b><span>DIRECT BLAST RADIUS</span></div>'+
+      '<section><small>UPSTREAM / INBOUND</small><ul>'+li(up)+'</ul></section>'+
+      '<section><small>DOWNSTREAM / OUTBOUND</small><ul>'+li(down)+'</ul></section>');
   }
+
   function showXray(){
     const x=state.data.intelligence?.xray||{};
     const roles=Object.entries(x.roles||{}).map(([k,v])=>'<span><b>'+esc(k)+'</b> '+esc(v)+'</span>').join('');
