@@ -46,3 +46,8 @@ python app.py
 ```
 
 Forge opens a local browser window and asks for the project folder to analyze. The target project is never modified by the analyzer.
+
+
+## Documentation
+
+- [Professional Feature & Technical Capability Report](docs/Project_Forge_Professional_Report.md)
