@@ -45,7 +45,7 @@
     $('graphExitFloat')?.addEventListener('click', exitGraph);
     s.addEventListener('wheel', e => { e.preventDefault(); zoom=Math.max(.45,Math.min(3,zoom*(e.deltaY<0?1.1:.9))); applyView(); }, {passive:false});
     box.addEventListener('mousedown', e => {
-      if(e.target.closest('.node')) return;
+      if(e.target.closest('.node') || e.target.closest('button')) return;
       panning=true; moved=false; startX=e.clientX-panX; startY=e.clientY-panY;
       box.classList.add('isPanning');
     });
