@@ -1,4 +1,5 @@
 from __future__ import annotations
+import ast
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 from scanner import import_tokens, rel
