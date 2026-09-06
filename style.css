@@ -17,3 +17,17 @@ body:has(#graph.activeTab) #graph .graphbox svg{width:100%;height:100%}
 body:has(#graph.activeTab) #graph .graph-hud{font-size:8px}
 
 @media(max-width:900px){.layout{grid-template-columns:1fr}.side{display:none}.hero{grid-template-columns:1fr}.dna{grid-template-columns:repeat(2,1fr)}.matrix,.securityGrid,.history{grid-template-columns:1fr}.meta{gap:10px}.explorer{grid-template-columns:1fr}.filetree{height:220px}.graphbox{height:70vh}body:has(#graph.activeTab) #graph{padding:8px}body:has(#graph.activeTab) #graph .graph-controls{overflow-x:auto}body:has(#graph.activeTab) #graph .graphbox{height:calc(100vh - 108px)}}
+.issue-locatable{cursor:pointer;transition:.18s;border-color:#183149}
+.issue-locatable:hover,.issue-locatable:focus-visible{
+  border-color:#58d8ff55;background:#58d8ff08;outline:none;
+  box-shadow:inset 0 0 20px #58d8ff05,0 0 12px #58d8ff08
+}
+.issue-locatable .issueLocation{color:#6ea7ba}
+.issue-locatable .issueLocation strong{color:#31586a}
+.codeLine{display:block;min-height:1.65em;white-space:pre}
+.codeLine.activeSourceLine{
+  background:#58d8ff12;
+  box-shadow:inset 3px 0 #58d8ff, inset 0 0 25px #58d8ff05;
+  color:#e8fcff;
+}
+.codeLine.activeSourceLine .ln{color:#58d8ff;text-shadow:0 0 8px #58d8ff}
