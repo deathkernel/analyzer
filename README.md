@@ -29,6 +29,11 @@ The project is split by responsibility so new analysis engines can be added with
 - A dedicated `FRESHERFLOW NEURAL` graph mode for visualizing the architecture patterns used by the FresherFlow Flask project.
 - Node dragging, zoom, center, tracing, animated dependency flow, live packet HUD and graph telemetry.
 - Responsive cockpit layout for smaller screens.
+- Hardened asset serving for every UI stylesheet/script used by the cockpit.
+- Stable multi-file import resolution with ambiguity-aware stem matching and Python from-import support.
+- Graph interaction fixes: one zoom controller, safe render scheduling, bounded node dragging and correct hot-node highlighting.
+- More meaningful duplication scoring based on repeated normalized lines rather than line length alone.
+- Regression tests for secret finding de-duplication, literal division-by-zero detection, import graph resolution and token extraction.
 
 ## FresherFlow neural map
 
