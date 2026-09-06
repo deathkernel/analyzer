@@ -91,95 +91,103 @@
     const svg=$('graphSvg'); if(!svg)return;
     const graph=state.data.graph||{};
     const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
-    const actualEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>{
-      const s=nodes.some(n=>n.id===e.source),t=nodes.some(n=>n.id===e.target);
-      return s&&t;
-    });
 
-    // Group nodes into deterministic left-to-right layers.
-    const byRank=new Map();
+    // Compress the real project topology into five visual layers.
+    // The underlying graph remains complete; only the presentation is simplified.
+    const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
+    const rawMax=Math.max(0,...rawRanks);
+    const layerCount=Math.min(5,Math.max(2,new Set(rawRanks).size));
+    const visualLayer=n=>rawMax===0?0:Math.min(layerCount-1,Math.round((Number(n.rank)||0)/rawMax*(layerCount-1)));
+    nodes.forEach(n=>{n.visualLayer=visualLayer(n);});
+
+    const byLayer=new Map();
     nodes.forEach(n=>{
-      const r=Math.max(0,Number(n.rank)||0);
-      if(!byRank.has(r))byRank.set(r,[]);
-      byRank.get(r).push(n);
+      if(!byLayer.has(n.visualLayer))byLayer.set(n.visualLayer,[]);
+      byLayer.get(n.visualLayer).push(n);
     });
-    [...byRank.values()].forEach(arr=>arr.sort((a,b)=>String(a.label||'').localeCompare(String(b.label||''))));
-    const ranks=[...byRank.keys()].sort((a,b)=>a-b);
-    const maxRank=Math.max(0,...ranks);
+    [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>{
+      const dy=(Number(x.degree)||0)-(Number(y.degree)||0);
+      return dy||String(x.label||'').localeCompare(String(y.label||''));
+    }));
 
-    // Use the neural-network presentation as the base layout.
-    const usableLeft=90, usableRight=1110, usableTop=95, usableBottom=610;
-    ranks.forEach((r,idx)=>{
-      const arr=byRank.get(r)||[];
-      const x=ranks.length<=1?600:usableLeft+(idx/(ranks.length-1))*(usableRight-usableLeft);
-      const gap=(usableBottom-usableTop)/Math.max(1,arr.length-1);
-      arr.forEach((n,i)=>{
-        const y=arr.length===1?350:usableTop+i*gap;
-        state.positions[n.id]={x,y};
-      });
-    });
-
-    text('graphInfo',nodes.length+' NODES / '+actualEdges.length+' EDGES');
-    text('hudNodes',String(nodes.length).padStart(2,'0'));
-    text('hudEdges',String(actualEdges.length).padStart(2,'0'));
-    text('hudDepth',String(ranks.length).padStart(2,'0'));
-    text('hudMode',state.mode.toUpperCase());
-
-    const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    const defs='<defs>'+
-      '<filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9fbff"/></marker>'+
-      '</defs>';
-
-    const layerNames=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
-    const guides=ranks.map((r,idx)=>{
-      const arr=byRank.get(r)||[];
-      const x=state.positions[arr[0]?.id]?.x||600;
-      const label=layerNames[idx]||('LAYER '+String(idx+1).padStart(2,'0'));
-      return '<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
-             '<text class="layerLabel" x="'+x+'" y="25">'+esc(label)+'</text>';
-    }).join('');
-
-    // Ghost links create the recognizable neural-network structure even when
-    // static analysis cannot infer every semantic dependency.
-    const ghost=[];
-    for(let i=0;i<ranks.length-1;i++){
-      const left=byRank.get(ranks[i])||[],right=byRank.get(ranks[i+1])||[];
-      left.forEach((s,si)=>{
-        right.forEach((t,ti)=>{
-          const density=(si+ti+i)%3!==0;
-          if(!density)return;
-          const p=state.positions[s.id],q=state.positions[t.id];
-          ghost.push('<path class="ghostEdge" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');
-        });
-      });
+    const left=105,right=1095,top=90,bottom=610;
+    for(let layer=0;layer<layerCount;layer++){
+      const arr=byLayer.get(layer)||[];
+      const x=layerCount===1?600:left+(layer/(layerCount-1))*(right-left);
+      const gap=(bottom-top)/Math.max(1,arr.length-1);
+      arr.forEach((n,i)=>{state.positions[n.id]={x,y:arr.length===1?350:top+i*gap};});
     }
 
-    const actual=actualEdges.map((e,i)=>{
-      const s=by[e.source],t=by[e.target];if(!s||!t)return '';
+    const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
+    const allEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
+
+    // Readable-neural presentation:
+    // 1) only connect adjacent visual layers;
+    // 2) prioritize real imports over inferred links;
+    // 3) cap connections per node to prevent spaghetti;
+    // 4) keep a little inbound/outbound budget so important hubs remain visible.
+    const candidates=allEdges.filter(e=>by[e.source].visualLayer+1===by[e.target].visualLayer)
+      .sort((a,b)=>{
+        const pa=a.kind==='import'?0:1,pb=b.kind==='import'?0:1;
+        return pa-pb || (Number(by[b.source].degree)||0)-(Number(by[a.source].degree)||0);
+      });
+    const outUsed=new Map(),inUsed=new Map(),visibleEdges=[];
+    const OUT_MAX=4,IN_MAX=4;
+    for(const e of candidates){
+      const okOut=(outUsed.get(e.source)||0)<OUT_MAX;
+      const okIn=(inUsed.get(e.target)||0)<IN_MAX;
+      if(!okOut||!okIn)continue;
+      outUsed.set(e.source,(outUsed.get(e.source)||0)+1);
+      inUsed.set(e.target,(inUsed.get(e.target)||0)+1);
+      visibleEdges.push(e);
+    }
+
+    text('graphInfo',nodes.length+' NODES / '+visibleEdges.length+' VISIBLE LINKS');
+    text('hudNodes',String(nodes.length).padStart(2,'0'));
+    text('hudEdges',String(visibleEdges.length).padStart(2,'0'));
+    text('hudDepth',String(layerCount).padStart(2,'0'));
+    text('hudMode',state.mode.toUpperCase());
+
+    const defs='<defs>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#dffcff"/></marker>'+
+      '</defs>';
+
+    const labels=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','OUTPUT'];
+    const guides=Array.from({length:layerCount},(_,layer)=>{
+      const arr=byLayer.get(layer)||[];
+      const x=arr.length?state.positions[arr[0].id].x:(left+(layer/Math.max(1,layerCount-1))*(right-left));
+      return '<line class="layerGuide" x1="'+x+'" y1="48" x2="'+x+'" y2="650"/>'+
+             '<text class="layerLabel" x="'+x+'" y="27">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
+    }).join('');
+
+    const paths=visibleEdges.map((e,i)=>{
+      const s=by[e.source],t=by[e.target];
       const p=state.positions[s.id],q=state.positions[t.id];
-      const bend=Math.max(25,Math.min(90,Math.abs(q.x-p.x)*.12));
-      const dir=q.x>=p.x?1:-1;
-      const d='M'+p.x+','+p.y+' C'+(p.x+bend*dir)+','+p.y+' '+(q.x-bend*dir)+','+q.y+' '+q.x+','+q.y;
+      const midX=(p.x+q.x)/2;
+      const spread=((i%5)-2)*5;
+      const d='M'+p.x+','+p.y+
+        ' C'+(p.x+(q.x-p.x)*.34)+','+(p.y+spread)+
+        ' '+(p.x+(q.x-p.x)*.66)+','+(q.y-spread)+
+        ' '+q.x+','+q.y;
       return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
-             '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%9)*.12)+'s;display:'+(state.fx?'block':'none')+'"/>';
+        '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%8)*.14)+'s;display:'+(state.fx?'block':'none')+'"/>';
     }).join('');
 
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const ns=nodes.map(n=>{
       const p=state.positions[n.id],degree=Number(n.degree||0);
       const hot=state.hot&&degree===maxDegree&&degree>0;
-      const radius=n.role==='entrypoint'?11:8;
+      const radius=n.role==='entrypoint'?10:7;
       return '<g class="node '+esc(String(n.role||'module').toLowerCase())+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
-        '<circle class="halo" r="'+(hot?24:17)+'"/>'+
+        '<circle class="halo" r="'+(hot?22:15)+'"/>'+
         '<circle class="core" r="'+radius+'"/>'+
-        '<circle class="ring" r="'+(hot?29:13)+'"/>'+
-        '<text class="name" y="23">'+esc(String(n.label||'').length>20?String(n.label).slice(0,19)+'…':n.label)+'</text>'+
-        '<text class="type" y="34">'+esc(String(n.role||n.language||'MODULE').toUpperCase())+' · '+esc(degree)+'</text>'+
+        '<circle class="ring" r="'+(hot?27:12)+'"/>'+
+        '<text class="name" y="22">'+esc(String(n.label||'').length>19?String(n.label).slice(0,18)+'…':n.label)+'</text>'+
+        '<text class="type" y="32">'+esc(String(n.role||n.language||'MODULE').toUpperCase())+'</text>'+
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="ghostEdges">'+ghost.join('')+'</g><g class="actualEdges">'+actual+'</g>'+ns;
+    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="actualEdges">'+paths+'</g>'+ns;
     bindNodes();
   }
 
