@@ -1,9 +1,6 @@
 /* FORGE NEURAL GRAPH // CINEMATIC PRESENTATION */
 body:has(#graph.activeTab){overflow:hidden;background:#01040a}
-body:has(#graph.activeTab) .top,
-body:has(#graph.activeTab) .side,
-body:has(#graph.activeTab) .target,
-body:has(#graph.activeTab) footer{display:none!important}
+body:has(#graph.activeTab) .top,body:has(#graph.activeTab) .side,body:has(#graph.activeTab) .target,body:has(#graph.activeTab) footer{display:none!important}
 body:has(#graph.activeTab) .layout{display:block;min-height:100vh}
 body:has(#graph.activeTab) main{padding:0;width:100vw;height:100vh}
 body:has(#graph.activeTab) #graph{display:flex;height:100vh;flex-direction:column;padding:18px 22px;background:radial-gradient(ellipse at center,#0b2438 0%,#030913 48%,#010309 100%);position:relative;overflow:hidden}
@@ -24,15 +21,17 @@ body:has(#graph.activeTab) .graphbox:before{content:'';position:absolute;inset:0
 body:has(#graph.activeTab) .graphbox:after{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,#58d8ff22,transparent);box-shadow:0 0 25px #58d8ff18;pointer-events:none;z-index:1}
 @keyframes gridDrift{to{background-position:55px 55px}}
 body:has(#graph.activeTab) .graphbox svg{z-index:4;filter:drop-shadow(0 0 3px #58d8ff22)}
-body:has(#graph.activeTab) .graphbox .edge{stroke:#3b9bc2;stroke-width:2.4;opacity:.72;filter:drop-shadow(0 0 3px #58d8ff55)}
-body:has(#graph.activeTab) .graphbox .edge.contains{stroke:#718dff;opacity:.55}
-body:has(#graph.activeTab) .graphbox .edge.import{stroke:#58d8ff;stroke-width:3;opacity:.98;filter:drop-shadow(0 0 6px #58d8ffcc)}
-body:has(#graph.activeTab) .graphbox .flow{stroke:#e9fdff;stroke-width:3.5;stroke-dasharray:1 25;filter:drop-shadow(0 0 7px #58d8ff);animation-duration:.85s}
+/* Connections are the priority: suppress folder topology and its animated duplicate paths. */
+body:has(#graph.activeTab) .graphbox .edge.contains,
+body:has(#graph.activeTab) .graphbox .edge.contains + .flow{display:none!important}
+body:has(#graph.activeTab) .graphbox .node.folder{display:none!important}
+body:has(#graph.activeTab) .graphbox .edge{stroke:#3b9bc2;stroke-width:2.6;opacity:.82;fill:none;filter:drop-shadow(0 0 4px #58d8ff55)}
+body:has(#graph.activeTab) .graphbox .edge.import{stroke:#58d8ff;stroke-width:3.4;opacity:1;filter:drop-shadow(0 0 7px #58d8ffdd)}
+body:has(#graph.activeTab) .graphbox .edge.neural{stroke:#9deaff;stroke-width:2.8;opacity:.9;filter:drop-shadow(0 0 5px #58d8ff99)}
+body:has(#graph.activeTab) .graphbox .flow{stroke:#f2ffff;stroke-width:3.8;stroke-dasharray:1 28;filter:drop-shadow(0 0 8px #58d8ff);animation-duration:.9s;pointer-events:none}
 body:has(#graph.activeTab) .graphbox .node .halo{fill:#58d8ff08;stroke:#58d8ff44;stroke-width:1;filter:drop-shadow(0 0 10px #58d8ff88);animation:nodeBreath 2.5s ease-in-out infinite}
 body:has(#graph.activeTab) .graphbox .node .core{fill:#061827;stroke:#58d8ff;stroke-width:1.8;filter:drop-shadow(0 0 8px #58d8ffcc)}
 body:has(#graph.activeTab) .graphbox .node .ring{fill:none;stroke:#58d8ff77;stroke-width:1;stroke-dasharray:3 7;animation:nodeSpin 5s linear infinite}
-body:has(#graph.activeTab) .graphbox .node.folder .core{fill:#101536;stroke:#8798ff;filter:drop-shadow(0 0 9px #718dffcc)}
-body:has(#graph.activeTab) .graphbox .node.folder .ring{stroke:#718dff88}
 body:has(#graph.activeTab) .graphbox .node:hover .core{fill:#10334a;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 18px #58d8ffff)}
 body:has(#graph.activeTab) .graphbox .node.selected .core{stroke:#fff;stroke-width:3;filter:drop-shadow(0 0 22px #fff)}
 body:has(#graph.activeTab) .graphbox .node.selected .halo{stroke:#fff;animation:selectedPulse 1s ease-in-out infinite}
@@ -42,7 +41,7 @@ body:has(#graph.activeTab) .graphbox .node text.type{font-size:7px;fill:#527b94}
 @keyframes nodeSpin{to{transform:rotate(360deg)}}
 @keyframes selectedPulse{50%{opacity:.25;stroke-width:2.5}}
 body:has(#graph.activeTab) .graph-hud{inset:15px;color:#507087;text-shadow:0 0 7px #000;z-index:8}
-body:has(#graph.activeTab) .graph-hud:after{content:'◈  LIVE NEURAL TELEMETRY  //  READ ONLY  //  SIGNAL LOCKED';position:absolute;left:50%;bottom:0;transform:translateX(-50%);color:#31556b;white-space:nowrap;font:7px Consolas;letter-spacing:3px}
+body:has(#graph.activeTab) .graph-hud:after{content:'◈ LIVE NEURAL TELEMETRY  // READ ONLY  // SIGNAL LOCKED';position:absolute;left:50%;bottom:0;transform:translateX(-50%);color:#31556b;white-space:nowrap;font:7px Consolas;letter-spacing:3px}
 body:has(#graph.activeTab) .graphbox .tip{background:#020a13f2;border-color:#58d8ff77;box-shadow:0 0 35px #000,0 0 18px #58d8ff12;backdrop-filter:blur(10px)}
 body:has(#graph.activeTab) .graphbox .tip b{font-size:11px;text-shadow:0 0 8px #58d8ff}
 @media(max-width:800px){body:has(#graph.activeTab) #graph{padding:10px}.graph-controls{overflow:auto}.graph-controls button{white-space:nowrap}.graph-hud .hudTR,.graph-hud .hudBL{display:none}}
