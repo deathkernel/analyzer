@@ -275,3 +275,37 @@ body:has(#graph.activeTab) .graphbox .edgeLabel{
   fill:#4b7e8f;font:5px Consolas;letter-spacing:1px;opacity:.55
 }
 @keyframes layerFlow{to{stroke-dashoffset:-84}}
+
+/* VISIBILITY PATCH */
+body:has(#graph.activeTab) .graphbox .layerGuide{
+  stroke:#58d8ff45!important;stroke-width:1!important;stroke-dasharray:4 10!important;
+}
+body:has(#graph.activeTab) .graphbox .layerLabel{
+  fill:#b8f5ff!important;font:8px Consolas!important;letter-spacing:2px!important;opacity:.9!important;
+}
+body:has(#graph.activeTab) .graphbox .ghostEdge{
+  fill:none;stroke:#75cdec;stroke-width:1.2;opacity:.30;
+  pointer-events:none;vector-effect:non-scaling-stroke;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge{
+  fill:none!important;stroke:#a6efff!important;stroke-width:1.8!important;opacity:.9!important;
+  vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 4px #58d8ff66);
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.import{
+  stroke:#ffffff!important;stroke-width:2.2!important;opacity:1!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.neural{
+  stroke:#8be8ff!important;stroke-width:1.6!important;opacity:.78!important;
+}
+body:has(#graph.activeTab) .graphbox .stream{
+  fill:none;stroke:#eaffff!important;stroke-width:2.4!important;stroke-dasharray:2 24!important;
+  opacity:.9!important;vector-effect:non-scaling-stroke;pointer-events:none;
+  animation:layerFlow 1.5s linear infinite!important;
+}
+body:has(#graph.activeTab) .graphbox .node .halo{
+  stroke:#58d8ff42!important;fill:#58d8ff08!important;opacity:.9;
+}
+body:has(#graph.activeTab) .graphbox .node .core{
+  stroke:#a4efff!important;stroke-width:1.7!important;fill:#061823!important;
+  filter:drop-shadow(0 0 8px #58d8ffcc)!important;
+}
