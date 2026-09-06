@@ -181,17 +181,7 @@
              '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
-    if(!state.focused){
-      const parts=[];let di=0;
-      for(let layer=0;layer<layerCount-1;layer++){
-        const aa=byLayer.get(layer)||[],bb=byLayer.get(layer+1)||[];
-        aa.forEach(s=>bb.forEach(t=>{
-          const p=state.positions[s.id],q=state.positions[t.id];
-          parts.push('<path class="denseEdge dense-'+(di%5)+'" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');di++;
-        }));
-      }
-      dense=parts.join('');
-    }
+    // No synthetic edges: render only real analyzer-detected relationships.
 
     const real=realEdges.map((e,i)=>{
       const s=by[e.source],t=by[e.target],p=state.positions[s.id],q=state.positions[t.id];
