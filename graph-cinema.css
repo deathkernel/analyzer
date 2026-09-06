@@ -346,3 +346,44 @@ body:has(#graph.activeTab) .graphbox .actualEdges .stream{
   opacity:.7!important;
   filter:drop-shadow(0 0 3px #58d8ff88)!important;
 }
+
+/* ALL CONNECTIONS / HIGH LEGIBILITY */
+body:has(#graph.activeTab) .graphbox .actualEdges .edge{
+  display:block!important;
+  fill:none!important;
+  stroke:#a9ecff!important;
+  stroke-width:1.25!important;
+  opacity:.72!important;
+  vector-effect:non-scaling-stroke;
+  filter:drop-shadow(0 0 2px #58d8ff55)!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.import{
+  stroke:#dffcff!important;
+  stroke-width:1.55!important;
+  opacity:.9!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.neural{
+  stroke:#76cce6!important;
+  stroke-width:1.1!important;
+  opacity:.55!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-0{opacity:.48!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-1{opacity:.56!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-2{opacity:.64!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-3{opacity:.72!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-4{opacity:.8!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-5{opacity:.6!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge-6{opacity:.52!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .stream{
+  display:block!important;
+  fill:none!important;
+  stroke:#ffffff!important;
+  stroke-width:1.7!important;
+  stroke-linecap:round;
+  stroke-dasharray:2 30!important;
+  opacity:.55!important;
+  pointer-events:none;
+  vector-effect:non-scaling-stroke;
+  filter:drop-shadow(0 0 3px #58d8ff88)!important;
+  animation:layerFlow 1.6s linear infinite!important;
+}
