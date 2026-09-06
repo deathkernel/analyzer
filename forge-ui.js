@@ -3,7 +3,7 @@
 
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, positions:{}, drag:null, renderQueued:false };
+  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, focused:null, positions:{}, drag:null, renderQueued:false };
 
   function text(id, value) { const el=$(id); if(el) el.textContent=String(value ?? ''); }
   function html(id, value) { const el=$(id); if(el) el.innerHTML=value; }
@@ -90,10 +90,34 @@
   function renderGraph(){
     const svg=$('graphSvg'); if(!svg)return;
     const graph=state.data.graph||{};
-    const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
+    const allNodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
+    const allEdges=(graph.edges||[]).filter(e=>e.kind!=='contains');
 
-    // Neural-network presentation: every node in one visual layer connects
-    // to every node in the next layer. Real analyzer edges remain highlighted.
+    // Focus mode: selecting a file isolates its local neural neighbourhood.
+    // We keep every real edge inside that neighbourhood; nothing is deleted
+    // from the backend graph, only the viewport is scoped to the selected node.
+    let nodes=allNodes;
+    if(state.focused){
+      const adjacency=new Map();
+      allNodes.forEach(n=>adjacency.set(n.id,new Set()));
+      allEdges.forEach(e=>{
+        if(adjacency.has(e.source)&&adjacency.has(e.target)){
+          adjacency.get(e.source).add(e.target);
+          adjacency.get(e.target).add(e.source);
+        }
+      });
+      const keep=new Set([state.focused]);
+      let frontier=new Set([state.focused]);
+      for(let hop=0;hop<2;hop++){
+        const next=new Set();
+        frontier.forEach(id=>(adjacency.get(id)||[]).forEach(nb=>{if(!keep.has(nb)){keep.add(nb);next.add(nb);}}));
+        frontier=next;
+      }
+      nodes=allNodes.filter(n=>keep.has(n.id));
+    }
+
+    // Neural-network presentation: arrange the visible neighbourhood in layers.
+    // Real analyzer edges remain highlighted.
     const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
     const rawMax=Math.max(0,...rawRanks);
     const layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
@@ -115,9 +139,9 @@
     }
 
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    const realEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>e.kind!=='contains'&&by[e.source]&&by[e.target]);
+    const realEdges=allEdges.filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
 
-    text('graphInfo',nodes.length+' NODES / '+realEdges.length+' DATA LINKS');
+    text('graphInfo',(state.focused?'FOCUS // ':'')+nodes.length+' NODES / '+realEdges.length+' DATA LINKS');
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(realEdges.length).padStart(2,'0'));
     text('hudDepth',String(layerCount).padStart(2,'0'));
@@ -181,7 +205,13 @@
     document.querySelectorAll('#graphSvg .node').forEach(el=>{
       el.addEventListener('mouseenter',e=>showTip(e,el.dataset.id));
       el.addEventListener('mouseleave',hideTip);
-      el.addEventListener('click',e=>{e.stopPropagation();state.selected=el.dataset.id;renderGraph();});
+      el.addEventListener('click',e=>{
+        e.stopPropagation();
+        state.selected=el.dataset.id;
+        state.focused=el.dataset.id;
+        state.positions={};
+        renderGraph();
+      });
       el.addEventListener('dblclick',e=>{e.stopPropagation();const n=(state.data.graph.nodes||[]).find(x=>x.id===el.dataset.id);if(n?.kind==='file')openFile(n.path);});
       el.addEventListener('mousedown',e=>{
         e.stopPropagation();
@@ -233,7 +263,13 @@
       queueGraphRender();
     });
     window.addEventListener('mouseup',()=>state.drag=null);
-    $('graphSvg')?.addEventListener('click',()=>{state.selected=null;renderGraph();});
+    $('graphSvg')?.addEventListener('click',e=>{
+      if(e.target.closest('.node'))return;
+      state.selected=null;
+      state.focused=null;
+      state.positions={};
+      renderGraph();
+    });
     window.addEventListener('keydown',e=>{
       if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();switchTab('search');$('query')?.focus();}
       if(e.key==='Escape'){state.selected=null;renderGraph();}
