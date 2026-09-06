@@ -89,11 +89,17 @@
 
   function renderGraph(){
     const svg=$('graphSvg'); if(!svg)return;
-    const graph=state.data.graph||{}; const nodes=graph.nodes||[]; const edges=(graph.edges||[]).filter(edgeVisible);
+    const graph=state.data.graph||{}; 
+    const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
+    const edges=(graph.edges||[]).filter(edgeVisible).filter(e=>{
+      const a=nodes.find(n=>n.id===e.source),b=nodes.find(n=>n.id===e.target);
+      return !!a&&!!b;
+    });
     text('graphInfo',nodes.length+' NODES / '+edges.length+' EDGES');
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(edges.length).padStart(2,'0'));
-    text('hudDepth',String(Math.max(0,...nodes.map(n=>Number(n.rank)||0))).padStart(2,'0'));
+    const maxRank=Math.max(0,...nodes.map(n=>Number(n.rank)||0));
+    text('hudDepth',String(maxRank+1).padStart(2,'0'));
     text('hudMode',state.mode.toUpperCase());
 
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
@@ -101,50 +107,51 @@
       if(!state.positions[n.id])state.positions[n.id]={x:Number(n.x)||100,y:Number(n.y)||100};
     });
 
-    const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const defs='<defs>'+
-      '<filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
-      '<filter id="strongGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#b9f6ff"/></marker>'+
+      '<filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
+      '<filter id="strongGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d7fbff"/></marker>'+
       '</defs>';
+
+    const layerNames=['ENTRY','SERVICES','LOGIC','DATA','VIEWS','ASSETS','MODULES','OUTPUT'];
+    const usableW=1040, left=80, step=maxRank>0?usableW/maxRank:0;
+    const guides=[];
+    for(let r=0;r<=maxRank;r++){
+      const x=left+r*step;
+      guides.push('<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
+                  '<text class="layerLabel" x="'+x+'" y="24">'+esc(layerNames[r]||('LAYER '+String(r+1).padStart(2,'0')))+'</text>');
+    }
+    const layerMarkup='<g class="layerGuides">'+guides.join('')+'</g>';
 
     const paths=edges.map((e,i)=>{
       const a=by[e.source],b=by[e.target]; if(!a||!b)return '';
       const p=state.positions[a.id],q=state.positions[b.id];
-      const dx=q.x-p.x,dy=q.y-p.y;
-      const bend=Math.max(38,Math.min(170,Math.hypot(dx,dy)*.22));
-      const perpX=dy/Math.max(1,Math.hypot(dx,dy)),perpY=-dx/Math.max(1,Math.hypot(dx,dy));
-      const offset=((i%5)-2)*6;
-      const mx=(p.x+q.x)/2+perpX*offset;
-      const my=(p.y+q.y)/2+perpY*offset;
-      const d='M'+p.x+','+p.y+' C'+(mx-bend)+','+p.y+' '+(mx+bend)+','+q.y+' '+q.x+','+q.y;
-      const d2='M'+(p.x+perpX*3)+','+(p.y+perpY*3)+' C'+(mx-bend*.8+perpX*4)+','+(p.y+perpY*4)+' '+(mx+bend*.8+perpX*4)+','+(q.y+perpY*4)+' '+(q.x+perpX*3)+','+(q.y+perpY*3);
-      const d3='M'+(p.x-perpX*3)+','+(p.y-perpY*3)+' C'+(mx-bend*.9-perpX*4)+','+(p.y-perpY*4)+' '+(mx+bend*.9-perpX*4)+','+(q.y-perpY*4)+' '+(q.x-perpX*3)+','+(q.y-perpY*3);
+      const same=Math.abs(Number(a.rank||0)-Number(b.rank||0))===0;
+      const mx=(p.x+q.x)/2;
+      const bend=same?18:Math.min(80,Math.max(24,Math.abs(q.y-p.y)*.16));
+      const d='M'+p.x+','+p.y+' C'+mx+','+(p.y-bend)+' '+mx+','+(q.y+bend)+' '+q.x+','+q.y;
+      const d2='M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y;
       const relation=e.relation||e.kind||'LINK';
-      const lx=mx,ly=my;
-      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
-             '<path class="stream streamA" d="'+d2+'" style="animation-delay:-'+((i%11)*.13)+'s;display:'+(state.fx?'block':'none')+'"/>'+
-             '<path class="stream streamB" d="'+d3+'" style="animation-delay:-'+((i%7)*.19)+'s;display:'+(state.fx?'block':'none')+'"/>'+
-             '<circle class="signalDot" cx="'+lx+'" cy="'+ly+'" r="1.7" style="animation-delay:-'+((i%13)*.11)+'s"/>'+
-             (i%3===0?'<text class="edgeLabel" x="'+(lx+5)+'" y="'+(ly-5)+'">'+esc(String(relation).toUpperCase())+'</text>':'');
+      return '<path class="edge '+esc(e.kind)+'" d="'+d2+'" marker-end="url(#arrow)"/>'+
+             '<path class="stream streamA" d="'+d+'" style="animation-delay:-'+((i%13)*.11)+'s;display:'+(state.fx?'block':'none')+'"/>'+
+             (i%5===0?'<text class="edgeLabel" x="'+(mx+4)+'" y="'+((p.y+q.y)/2-4)+'">'+esc(String(relation).toUpperCase())+'</text>':'');
     }).join('');
 
     const ns=nodes.map(n=>{
       const p=state.positions[n.id],degree=Number(n.degree||0);
-      const hot=state.hot&&degree===maxDegree&&maxDegree>0;
-      const size=n.kind==='folder'?11:8;
-      return '<g class="node '+esc(n.kind)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
-        '<circle class="halo" r="'+(hot?25:19)+'"/>'+
+      const hot=state.hot&&degree===Math.max(0,...nodes.map(x=>Number(x.degree)||0))&&degree>0;
+      const size=n.role==='entrypoint'?11:8;
+      const role=String(n.role||'module').replace(/[^a-z0-9_-]/gi,'').toLowerCase();
+      return '<g class="node '+esc(role)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
+        '<circle class="halo" r="'+(hot?26:18)+'"/>'+
         '<circle class="core" r="'+size+'"/>'+
-        '<circle class="ring" r="'+(hot?31:14)+'"/>'+
-        '<circle class="reticle" r="'+(hot?37:0)+'"/>'+
-        '<text class="name" y="24">'+esc(String(n.label||'').length>24?String(n.label).slice(0,23)+'…':n.label)+'</text>'+
-        '<text class="type" y="34">'+esc(n.kind==='folder'?'FOLDER':n.language||'FILE')+' · '+esc(n.degree||0)+'</text>'+
-        (hot?'<text class="telemetry" y="-28">CORE '+esc(n.rank??0)+' // '+esc(degree)+' LINKS</text>':'')+
+        '<circle class="ring" r="'+(hot?32:14)+'"/>'+
+        '<text class="name" y="25">'+esc(String(n.label||'').length>22?String(n.label).slice(0,21)+'…':n.label)+'</text>'+
+        '<text class="type" y="35">'+esc((n.role||n.language||'MODULE').toUpperCase())+' · '+esc(degree)+'</text>'+
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+paths+ns;
+    svg.innerHTML=defs+layerMarkup+paths+ns;
     bindNodes();
   }
 
