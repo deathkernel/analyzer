@@ -23,7 +23,12 @@
 
   function issueCard(x){
     const sev=String(x.severity||'LOW').toLowerCase();
-    return '<div class="issue"><i class="'+sev+'"></i><div><b>'+esc(x.title||x.type||'Finding')+'</b><small>'+esc(x.file||'PROJECT')+(x.line?' : LINE '+x.line:'')+'</small><p>'+esc(x.message||'')+'</p></div><em class="'+sev+'">'+sev.toUpperCase()+'</em></div>';
+    const file=String(x.file||'PROJECT');
+    const line=Number(x.line)||0;
+    const column=Number(x.column)||0;
+    const location=line?'LINE '+line+(column?' • COL '+column:''):'NO SOURCE LOCATION';
+    const target=file && file!=='PROJECT' && line? ' data-location-file="'+esc(encodeURIComponent(file))+'" data-location-line="'+line+'" data-location-column="'+column+'" tabindex="0" role="button" title="Open source at finding location"':'';
+    return '<div class="issue issue-locatable"'+target+'><i class="'+sev+'"></i><div><b>'+esc(x.title||x.type||'Finding')+'</b><small class="issueLocation">'+esc(file)+' <strong>•</strong> '+esc(location)+'</small><p>'+esc(x.message||'')+'</p></div><em class="'+sev+'">'+sev.toUpperCase()+'</em></div>';
   }
 
   function renderDNA(){
@@ -41,13 +46,25 @@
     html('filesTree',files.map(f=>'<button type="button" data-open-file="'+encodeURIComponent(f.path)+'"><span>'+icon(f.language)+'</span>'+esc(f.path)+'<em>'+esc(f.lines)+'</em></button>').join('')||'<div class="empty">NO MATCHING FILES</div>');
   }
 
-  async function openFile(path){
+  async function openFile(path, focusLine=0, focusColumn=0){
     try{
+      hideTip();
       const x=await api('/api/file?path='+encodeURIComponent(path));
       text('codeTitle',x.path); text('codeLang',x.language);
       const lines=String(x.content||'').split(/\r?\n/);
-      html('code',lines.map((line,i)=>'<span class="ln">'+String(i+1).padStart(4,' ')+'</span>'+esc(line)).join('\n'));
+      html('code',lines.map((line,i)=>{
+        const active=Number(focusLine)===i+1;
+        const cls=active?'codeLine activeSourceLine':'codeLine';
+        return '<span class="'+cls+'" data-line="'+(i+1)+'"><span class="ln">'+String(i+1).padStart(4,' ')+'</span>'+esc(line)+'</span>';
+      }).join('\n'));
       switchTab('explorer');
+      if(focusLine){
+        requestAnimationFrame(()=>{
+          const el=document.querySelector('#code .activeSourceLine');
+          if(el){el.scrollIntoView({block:'center',behavior:'smooth'});}
+          text('codeTitle',x.path+'  •  LINE '+focusLine+(focusColumn?' • COL '+focusColumn:''));
+        });
+      }
     }catch(e){showError('Could not open file',e.message);}
   }
 
@@ -310,7 +327,24 @@
     $('filesTree')?.addEventListener('click',e=>{const b=e.target.closest('[data-open-file]');if(b)openFile(decodeURIComponent(b.dataset.openFile));});
     $('searchBtn')?.addEventListener('click',doSearch);
     $('query')?.addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
-    $('results')?.addEventListener('click',e=>{const el=e.target.closest('[data-search-file]');if(el)openFile(decodeURIComponent(el.dataset.searchFile));});
+    document.addEventListener('click',e=>{
+      const el=e.target.closest('.issue-locatable[data-location-file]');
+      if(!el)return;
+      e.preventDefault();
+      openFile(
+        decodeURIComponent(el.dataset.locationFile),
+        Number(el.dataset.locationLine)||0,
+        Number(el.dataset.locationColumn)||0
+      );
+    });
+    document.addEventListener('keydown',e=>{
+      const el=document.activeElement?.closest?.('.issue-locatable[data-location-file]');
+      if(el && (e.key==='Enter'||e.key===' ')){
+        e.preventDefault();
+        openFile(decodeURIComponent(el.dataset.locationFile),Number(el.dataset.locationLine)||0,Number(el.dataset.locationColumn)||0);
+      }
+    });
+        $('results')?.addEventListener('click',e=>{const el=e.target.closest('[data-search-file]');if(el)openFile(decodeURIComponent(el.dataset.searchFile));});
     document.querySelectorAll('.graph-controls [data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;document.querySelectorAll('.graph-controls [data-mode]').forEach(x=>x.classList.toggle('active',x===b));renderGraph();}));
     $('hotBtn')?.addEventListener('click',focusHot);
     $('impactBtn')?.addEventListener('click',showImpact);
