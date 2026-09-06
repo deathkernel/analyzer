@@ -93,12 +93,17 @@
     const allNodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
     const allEdges=(graph.edges||[]).filter(e=>e.kind!=='contains');
 
-    // SINGLE-FILE FOCUS MODE:
-    // When a file/node is touched, show ONLY that file.
-    // No neighboring file nodes or edges are rendered.
+    // FILE NETWORK FOCUS:
+    // Show the selected file plus every directly connected file.
+    // Unrelated project nodes stay hidden.
     let nodes=allNodes;
     if(state.focused){
-      nodes=allNodes.filter(n=>n.id===state.focused);
+      const keep=new Set([state.focused]);
+      allEdges.forEach(e=>{
+        if(e.source===state.focused)keep.add(e.target);
+        if(e.target===state.focused)keep.add(e.source);
+      });
+      nodes=allNodes.filter(n=>keep.has(n.id));
     }
 
     // Neural-network presentation: arrange the visible neighbourhood in layers.
