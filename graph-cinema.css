@@ -164,3 +164,53 @@ body:has(#graph.activeTab) .graphbox .tip b{font-size:10px;color:#dffcff;text-sh
   body:has(#graph.activeTab) .graphbox .flow,
   body:has(#graph.activeTab) .graphbox .node .halo{animation:none}
 }
+/* FLOW FIELD MODE */
+body:has(#graph.activeTab) .graphbox .edge{
+  stroke:#d6faff;stroke-width:1.15;opacity:.26;fill:none;
+  filter:drop-shadow(0 0 2px #8cecff55);
+}
+body:has(#graph.activeTab) .graphbox .edge.import{stroke:#dffcff;stroke-width:1.45;opacity:.52}
+body:has(#graph.activeTab) .graphbox .edge.neural{stroke:#c4f6ff;stroke-width:1;opacity:.34}
+body:has(#graph.activeTab) .graphbox .stream{
+  fill:none;stroke:#ffffff;stroke-width:1;opacity:.48;stroke-dasharray:1 22;
+  filter:drop-shadow(0 0 4px #58d8ffaa);pointer-events:none;
+  animation:signalFlow 1.7s linear infinite;
+}
+body:has(#graph.activeTab) .graphbox .streamB{opacity:.22;animation-duration:2.15s}
+body:has(#graph.activeTab) .graphbox .signalDot{
+  fill:#dfffff;filter:drop-shadow(0 0 5px #58d8ff);
+  animation:signalPulse 1.8s ease-in-out infinite;
+}
+body:has(#graph.activeTab) .graphbox .edgeLabel{
+  fill:#5f95a8;font:5px Consolas;letter-spacing:1px;opacity:.42;
+  text-shadow:0 0 5px #000;
+}
+body:has(#graph.activeTab) .graphbox .node .halo{
+  fill:#58d8ff02;stroke:#58d8ff25;stroke-width:1;
+  animation:nodeBreath 3.8s ease-in-out infinite;
+}
+body:has(#graph.activeTab) .graphbox .node .core{
+  fill:#02080d;stroke:#8beaff;stroke-width:1.15;
+  filter:drop-shadow(0 0 5px #58d8ff88);
+}
+body:has(#graph.activeTab) .graphbox .node .ring{
+  fill:none;stroke:#58d8ff28;stroke-width:1;stroke-dasharray:2 8;
+}
+body:has(#graph.activeTab) .graphbox .node .reticle{
+  fill:none;stroke:#8cecff44;stroke-width:1;stroke-dasharray:1 11;
+  animation:reticleSpin 7s linear infinite;
+}
+body:has(#graph.activeTab) .graphbox .node.hot .reticle{
+  r:37;stroke:#dfffff99;stroke-dasharray:2 7;
+}
+body:has(#graph.activeTab) .graphbox .node text.telemetry{
+  font:5px Consolas;fill:#72bfd1;letter-spacing:1px;opacity:.75;
+}
+body:has(#graph.activeTab) .graphbox .node text.name{
+  font-size:8px;fill:#bdeef7;text-shadow:0 0 6px #58d8ff55;
+}
+body:has(#graph.activeTab) .graphbox .node text.type{font-size:5.5px;fill:#3e6879}
+@keyframes signalFlow{to{stroke-dashoffset:-70}}
+@keyframes signalPulse{50%{opacity:.18;transform:scale(.65)}}
+@keyframes reticleSpin{to{transform:rotate(360deg)}}
+@keyframes nodeBreath{50%{opacity:.58}}
