@@ -90,14 +90,60 @@
   function renderGraph(){
     const svg=$('graphSvg'); if(!svg)return;
     const graph=state.data.graph||{}; const nodes=graph.nodes||[]; const edges=(graph.edges||[]).filter(edgeVisible);
-    text('graphInfo',nodes.length+' NODES / '+edges.length+' EDGES'); text('hudNodes',String(nodes.length).padStart(2,'0')); text('hudEdges',String(edges.length).padStart(2,'0'));
-    text('hudDepth',String(Math.max(0,...nodes.map(n=>Number(n.rank)||0))).padStart(2,'0')); text('hudMode',state.mode.toUpperCase());
+    text('graphInfo',nodes.length+' NODES / '+edges.length+' EDGES');
+    text('hudNodes',String(nodes.length).padStart(2,'0'));
+    text('hudEdges',String(edges.length).padStart(2,'0'));
+    text('hudDepth',String(Math.max(0,...nodes.map(n=>Number(n.rank)||0))).padStart(2,'0'));
+    text('hudMode',state.mode.toUpperCase());
+
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    nodes.forEach(n=>{ if(!state.positions[n.id]) state.positions[n.id]={x:Number(n.x)||100,y:Number(n.y)||100}; });
+    nodes.forEach(n=>{
+      if(!state.positions[n.id])state.positions[n.id]={x:Number(n.x)||100,y:Number(n.y)||100};
+    });
+
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
-    const defs='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#58d8ff"/></marker></defs>';
-    const paths=edges.map((e,i)=>{const a=by[e.source],b=by[e.target];if(!a||!b)return '';const p=state.positions[a.id],q=state.positions[b.id],mx=(p.x+q.x)/2;const d='M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y;return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/><path class="flow" d="'+d+'" style="animation-delay:-'+((i%9)*.17)+'s;display:'+(state.fx?'block':'none')+'"/>';}).join('');
-    const ns=nodes.map(n=>{const p=state.positions[n.id],degree=Number(n.degree||0),hot=state.hot&&degree===maxDegree&&maxDegree>0;return '<g class="node '+esc(n.kind)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'"><circle class="halo" r="'+(hot?28:24)+'"/><circle class="core" r="'+(n.kind==='folder'?13:9)+'"/><circle class="ring" r="'+(n.kind==='folder'?19:14)+'"/><text class="name" y="28">'+esc(String(n.label||'').length>22?String(n.label).slice(0,21)+'…':n.label)+'</text><text class="type" y="39">'+esc(n.kind==='folder'?'FOLDER':n.language||'FILE')+' • '+esc(n.degree||0)+' LINKS</text></g>';}).join('');
+    const defs='<defs>'+
+      '<filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
+      '<filter id="strongGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#b9f6ff"/></marker>'+
+      '</defs>';
+
+    const paths=edges.map((e,i)=>{
+      const a=by[e.source],b=by[e.target]; if(!a||!b)return '';
+      const p=state.positions[a.id],q=state.positions[b.id];
+      const dx=q.x-p.x,dy=q.y-p.y;
+      const bend=Math.max(38,Math.min(170,Math.hypot(dx,dy)*.22));
+      const perpX=dy/Math.max(1,Math.hypot(dx,dy)),perpY=-dx/Math.max(1,Math.hypot(dx,dy));
+      const offset=((i%5)-2)*6;
+      const mx=(p.x+q.x)/2+perpX*offset;
+      const my=(p.y+q.y)/2+perpY*offset;
+      const d='M'+p.x+','+p.y+' C'+(mx-bend)+','+p.y+' '+(mx+bend)+','+q.y+' '+q.x+','+q.y;
+      const d2='M'+(p.x+perpX*3)+','+(p.y+perpY*3)+' C'+(mx-bend*.8+perpX*4)+','+(p.y+perpY*4)+' '+(mx+bend*.8+perpX*4)+','+(q.y+perpY*4)+' '+(q.x+perpX*3)+','+(q.y+perpY*3);
+      const d3='M'+(p.x-perpX*3)+','+(p.y-perpY*3)+' C'+(mx-bend*.9-perpX*4)+','+(p.y-perpY*4)+' '+(mx+bend*.9-perpX*4)+','+(q.y-perpY*4)+' '+(q.x-perpX*3)+','+(q.y-perpY*3);
+      const relation=e.relation||e.kind||'LINK';
+      const lx=mx,ly=my;
+      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
+             '<path class="stream streamA" d="'+d2+'" style="animation-delay:-'+((i%11)*.13)+'s;display:'+(state.fx?'block':'none')+'"/>'+
+             '<path class="stream streamB" d="'+d3+'" style="animation-delay:-'+((i%7)*.19)+'s;display:'+(state.fx?'block':'none')+'"/>'+
+             '<circle class="signalDot" cx="'+lx+'" cy="'+ly+'" r="1.7" style="animation-delay:-'+((i%13)*.11)+'s"/>'+
+             (i%3===0?'<text class="edgeLabel" x="'+(lx+5)+'" y="'+(ly-5)+'">'+esc(String(relation).toUpperCase())+'</text>':'');
+    }).join('');
+
+    const ns=nodes.map(n=>{
+      const p=state.positions[n.id],degree=Number(n.degree||0);
+      const hot=state.hot&&degree===maxDegree&&maxDegree>0;
+      const size=n.kind==='folder'?11:8;
+      return '<g class="node '+esc(n.kind)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
+        '<circle class="halo" r="'+(hot?25:19)+'"/>'+
+        '<circle class="core" r="'+size+'"/>'+
+        '<circle class="ring" r="'+(hot?31:14)+'"/>'+
+        '<circle class="reticle" r="'+(hot?37:0)+'"/>'+
+        '<text class="name" y="24">'+esc(String(n.label||'').length>24?String(n.label).slice(0,23)+'…':n.label)+'</text>'+
+        '<text class="type" y="34">'+esc(n.kind==='folder'?'FOLDER':n.language||'FILE')+' · '+esc(n.degree||0)+'</text>'+
+        (hot?'<text class="telemetry" y="-28">CORE '+esc(n.rank??0)+' // '+esc(degree)+' LINKS</text>':'')+
+        '</g>';
+    }).join('');
+
     svg.innerHTML=defs+paths+ns;
     bindNodes();
   }
