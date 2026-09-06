@@ -92,8 +92,8 @@
     const graph=state.data.graph||{};
     const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
 
-    // Keep every detected connection visible. Layout is layered; density is
-    // handled through spacing, curvature and styling rather than deleting data.
+    // Neural-network presentation: every node in one visual layer connects
+    // to every node in the next layer. Real analyzer edges remain highlighted.
     const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
     const rawMax=Math.max(0,...rawRanks);
     const layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
@@ -104,12 +104,9 @@
       if(!byLayer.has(n.visualLayer))byLayer.set(n.visualLayer,[]);
       byLayer.get(n.visualLayer).push(n);
     });
-    [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>{
-      const dy=(Number(y.degree)||0)-(Number(x.degree)||0);
-      return dy||String(x.label||'').localeCompare(String(y.label||''));
-    }));
+    [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>String(x.label||'').localeCompare(String(y.label||''))));
 
-    const left=95,right=1105,top=78,bottom=622;
+    const left=95,right=1105,top=72,bottom=628;
     for(let layer=0;layer<layerCount;layer++){
       const arr=byLayer.get(layer)||[];
       const x=layerCount===1?600:left+(layer/Math.max(1,layerCount-1))*(right-left);
@@ -118,37 +115,49 @@
     }
 
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    const visibleEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]&&e.kind!=='contains');
+    const realEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>e.kind!=='contains'&&by[e.source]&&by[e.target]);
 
-    text('graphInfo',nodes.length+' NODES / '+visibleEdges.length+' LINKS');
+    text('graphInfo',nodes.length+' NODES / '+realEdges.length+' DATA LINKS');
     text('hudNodes',String(nodes.length).padStart(2,'0'));
-    text('hudEdges',String(visibleEdges.length).padStart(2,'0'));
+    text('hudEdges',String(realEdges.length).padStart(2,'0'));
     text('hudDepth',String(layerCount).padStart(2,'0'));
-    text('hudMode',state.mode.toUpperCase());
+    text('hudMode','FULL NETWORK');
 
     const defs='<defs>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ccefff"/></marker>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d8fbff"/></marker>'+
       '</defs>';
 
     const labels=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
     const guides=Array.from({length:layerCount},(_,layer)=>{
       const arr=byLayer.get(layer)||[];
-      const x=arr.length?state.positions[arr[0].id].x:(left+(layer/Math.max(1,layerCount-1))*(right-left));
-      return '<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
-             '<text class="layerLabel" x="'+x+'" y="27">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
+      const x=arr.length?state.positions[arr[0].id].x:left+(layer/Math.max(1,layerCount-1))*(right-left);
+      return '<line class="layerGuide" x1="'+x+'" y1="38" x2="'+x+'" y2="662"/>'+
+             '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
-    const paths=visibleEdges.map((e,i)=>{
-      const s=by[e.source],t=by[e.target],p=state.positions[s.id],q=state.positions[t.id];
-      const same=s.visualLayer===t.visualLayer;
-      const dist=Math.abs(q.y-p.y);
-      const curve=same?18:Math.max(18,Math.min(70,dist*.10));
-      const dir=q.x>=p.x?1:-1;
-      const c1x=p.x+(q.x-p.x)*.35;
-      const c2x=p.x+(q.x-p.x)*.65;
-      const d='M'+p.x+','+p.y+' C'+c1x+','+(p.y+curve*dir*.15)+' '+c2x+','+(q.y-curve*dir*.15)+' '+q.x+','+q.y;
-      return '<path class="edge '+esc(e.kind)+' edge-'+(i%7)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
-             '<path class="stream stream-'+(i%5)+'" d="'+d+'" style="animation-delay:-'+((i%17)*.09)+'s;display:'+(state.fx?'block':'none')+'"/>';
+    // Complete adjacent-layer network: do not discard or cap connections.
+    const dense=[];
+    let denseIndex=0;
+    for(let layer=0;layer<layerCount-1;layer++){
+      const sourceLayer=byLayer.get(layer)||[],targetLayer=byLayer.get(layer+1)||[];
+      sourceLayer.forEach(s=>{
+        targetLayer.forEach(t=>{
+          const p=state.positions[s.id],q=state.positions[t.id];
+          const d='M'+p.x+','+p.y+' L'+q.x+','+q.y;
+          dense.push('<path class="denseEdge dense-'+(denseIndex%5)+'" d="'+d+'"/>');
+          denseIndex++;
+        });
+      });
+    }
+
+    const real=realEdges.map((e,i)=>{
+      const s=by[e.source],t=by[e.target];
+      const p=state.positions[s.id],q=state.positions[t.id];
+      const bend=Math.max(12,Math.min(55,Math.abs(q.y-p.y)*.06));
+      const mid=(p.x+q.x)/2;
+      const d='M'+p.x+','+p.y+' C'+mid+','+(p.y-bend)+' '+mid+','+(q.y+bend)+' '+q.x+','+q.y;
+      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
+             '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%19)*.07)+'s;display:'+(state.fx?'block':'none')+'"/>';
     }).join('');
 
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
@@ -164,7 +173,7 @@
         '</g>';
     }).join('');
 
-    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="actualEdges">'+paths+'</g>'+ns;
+    svg.innerHTML=defs+'<g class="layerGuides">'+guides+'</g><g class="denseEdges">'+dense.join('')+'</g><g class="actualEdges">'+real+'</g>'+ns;
     bindNodes();
   }
 
