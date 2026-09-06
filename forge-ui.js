@@ -92,13 +92,12 @@
     const graph=state.data.graph||{};
     const nodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
 
-    // Compress the real project topology into five visual layers.
-    // The underlying graph remains complete; only the presentation is simplified.
+    // Keep every detected connection visible. Layout is layered; density is
+    // handled through spacing, curvature and styling rather than deleting data.
     const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
     const rawMax=Math.max(0,...rawRanks);
-    const layerCount=Math.min(5,Math.max(2,new Set(rawRanks).size));
-    const visualLayer=n=>rawMax===0?0:Math.min(layerCount-1,Math.round((Number(n.rank)||0)/rawMax*(layerCount-1)));
-    nodes.forEach(n=>{n.visualLayer=visualLayer(n);});
+    const layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
+    nodes.forEach(n=>{n.visualLayer=rawMax===0?0:Math.min(layerCount-1,Math.round((Number(n.rank)||0)/rawMax*(layerCount-1)));});
 
     const byLayer=new Map();
     nodes.forEach(n=>{
@@ -106,82 +105,60 @@
       byLayer.get(n.visualLayer).push(n);
     });
     [...byLayer.values()].forEach(arr=>arr.sort((x,y)=>{
-      const dy=(Number(x.degree)||0)-(Number(y.degree)||0);
+      const dy=(Number(y.degree)||0)-(Number(x.degree)||0);
       return dy||String(x.label||'').localeCompare(String(y.label||''));
     }));
 
-    const left=105,right=1095,top=90,bottom=610;
+    const left=95,right=1105,top=78,bottom=622;
     for(let layer=0;layer<layerCount;layer++){
       const arr=byLayer.get(layer)||[];
-      const x=layerCount===1?600:left+(layer/(layerCount-1))*(right-left);
+      const x=layerCount===1?600:left+(layer/Math.max(1,layerCount-1))*(right-left);
       const gap=(bottom-top)/Math.max(1,arr.length-1);
       arr.forEach((n,i)=>{state.positions[n.id]={x,y:arr.length===1?350:top+i*gap};});
     }
 
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
-    const allEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
+    const visibleEdges=(graph.edges||[]).filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]&&e.kind!=='contains');
 
-    // Readable-neural presentation:
-    // 1) only connect adjacent visual layers;
-    // 2) prioritize real imports over inferred links;
-    // 3) cap connections per node to prevent spaghetti;
-    // 4) keep a little inbound/outbound budget so important hubs remain visible.
-    const candidates=allEdges.filter(e=>by[e.source].visualLayer+1===by[e.target].visualLayer)
-      .sort((a,b)=>{
-        const pa=a.kind==='import'?0:1,pb=b.kind==='import'?0:1;
-        return pa-pb || (Number(by[b.source].degree)||0)-(Number(by[a.source].degree)||0);
-      });
-    const outUsed=new Map(),inUsed=new Map(),visibleEdges=[];
-    const OUT_MAX=4,IN_MAX=4;
-    for(const e of candidates){
-      const okOut=(outUsed.get(e.source)||0)<OUT_MAX;
-      const okIn=(inUsed.get(e.target)||0)<IN_MAX;
-      if(!okOut||!okIn)continue;
-      outUsed.set(e.source,(outUsed.get(e.source)||0)+1);
-      inUsed.set(e.target,(inUsed.get(e.target)||0)+1);
-      visibleEdges.push(e);
-    }
-
-    text('graphInfo',nodes.length+' NODES / '+visibleEdges.length+' VISIBLE LINKS');
+    text('graphInfo',nodes.length+' NODES / '+visibleEdges.length+' LINKS');
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(visibleEdges.length).padStart(2,'0'));
     text('hudDepth',String(layerCount).padStart(2,'0'));
     text('hudMode',state.mode.toUpperCase());
 
     const defs='<defs>'+
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#dffcff"/></marker>'+
+      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ccefff"/></marker>'+
       '</defs>';
 
-    const labels=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','OUTPUT'];
+    const labels=['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
     const guides=Array.from({length:layerCount},(_,layer)=>{
       const arr=byLayer.get(layer)||[];
       const x=arr.length?state.positions[arr[0].id].x:(left+(layer/Math.max(1,layerCount-1))*(right-left));
-      return '<line class="layerGuide" x1="'+x+'" y1="48" x2="'+x+'" y2="650"/>'+
+      return '<line class="layerGuide" x1="'+x+'" y1="42" x2="'+x+'" y2="658"/>'+
              '<text class="layerLabel" x="'+x+'" y="27">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
     const paths=visibleEdges.map((e,i)=>{
-      const s=by[e.source],t=by[e.target];
-      const p=state.positions[s.id],q=state.positions[t.id];
-      const midX=(p.x+q.x)/2;
-      const spread=((i%5)-2)*5;
-      const d='M'+p.x+','+p.y+
-        ' C'+(p.x+(q.x-p.x)*.34)+','+(p.y+spread)+
-        ' '+(p.x+(q.x-p.x)*.66)+','+(q.y-spread)+
-        ' '+q.x+','+q.y;
-      return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
-        '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%8)*.14)+'s;display:'+(state.fx?'block':'none')+'"/>';
+      const s=by[e.source],t=by[e.target],p=state.positions[s.id],q=state.positions[t.id];
+      const same=s.visualLayer===t.visualLayer;
+      const dist=Math.abs(q.y-p.y);
+      const curve=same?18:Math.max(18,Math.min(70,dist*.10));
+      const dir=q.x>=p.x?1:-1;
+      const c1x=p.x+(q.x-p.x)*.35;
+      const c2x=p.x+(q.x-p.x)*.65;
+      const d='M'+p.x+','+p.y+' C'+c1x+','+(p.y+curve*dir*.15)+' '+c2x+','+(q.y-curve*dir*.15)+' '+q.x+','+q.y;
+      return '<path class="edge '+esc(e.kind)+' edge-'+(i%7)+'" d="'+d+'" marker-end="url(#arrow)"/>'+
+             '<path class="stream stream-'+(i%5)+'" d="'+d+'" style="animation-delay:-'+((i%17)*.09)+'s;display:'+(state.fx?'block':'none')+'"/>';
     }).join('');
 
     const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const ns=nodes.map(n=>{
-      const p=state.positions[n.id],degree=Number(n.degree||0);
-      const hot=state.hot&&degree===maxDegree&&degree>0;
+      const p=state.positions[n.id],degree=Number(n.degree||0),hot=state.hot&&degree===maxDegree&&degree>0;
       const radius=n.role==='entrypoint'?10:7;
       return '<g class="node '+esc(String(n.role||'module').toLowerCase())+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'">'+
         '<circle class="halo" r="'+(hot?22:15)+'"/>'+
         '<circle class="core" r="'+radius+'"/>'+
-        '<circle class="ring" r="'+(hot?27:12)+'"/>'+
+        '<circle class="ring" r="'+(hot?28:12)+'"/>'+
         '<text class="name" y="22">'+esc(String(n.label||'').length>19?String(n.label).slice(0,18)+'…':n.label)+'</text>'+
         '<text class="type" y="32">'+esc(String(n.role||n.language||'MODULE').toUpperCase())+'</text>'+
         '</g>';
