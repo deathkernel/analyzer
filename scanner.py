@@ -28,8 +28,10 @@ def read_text(p):
     try:return p.read_text(encoding='utf-8',errors='replace')
     except (OSError,UnicodeError):return ''
 
-def issue(out,kind,file,line,title,message,severity='MEDIUM',**extra):
+def issue(out,kind,file,line,title,message,severity='MEDIUM',column=None,**extra):
     x={'type':kind,'file':file,'line':int(line or 0),'title':title,'message':message,'severity':severity}
+    if column:
+        x['column']=int(column)
     x.update(extra)
     out.append(x)
 
@@ -37,7 +39,7 @@ def python_checks(text,path,root,out,m):
     try:
         tree=ast.parse(text,filename=str(path))
     except SyntaxError as e:
-        issue(out,'SYNTAX_ERROR',rel(root,path),e.lineno,'Syntax error',e.msg or 'Invalid Python syntax.','CRITICAL')
+        issue(out,'SYNTAX_ERROR',rel(root,path),e.lineno,'Syntax error',e.msg or 'Invalid Python syntax.','CRITICAL',getattr(e,'offset',None))
         return
     py_nodes=list(ast.walk(tree))
     m['functions']+=sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) for n in py_nodes)
@@ -63,23 +65,23 @@ def python_checks(text,path,root,out,m):
             k=(n.lineno,n.id)
             if k not in seen:
                 seen.add(k)
-                issue(out,'UNDEFINED_NAME',rel(root,path),n.lineno,f'Undefined name: {n.id}',f"'{n.id}' is used but is not defined or imported in this module.",'HIGH')
+                issue(out,'UNDEFINED_NAME',rel(root,path),n.lineno,f'Undefined name: {n.id}',f"'{n.id}' is used but is not defined or imported in this module.",'HIGH',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.BinOp) and isinstance(n.op,(ast.Div,ast.FloorDiv,ast.Mod)) and isinstance(n.right,ast.Constant) and n.right.value==0:
-            issue(out,'DIV_ZERO',rel(root,path),n.lineno,'Division by zero','Literal zero is used as the divisor.','CRITICAL')
+            issue(out,'DIV_ZERO',rel(root,path),n.lineno,'Division by zero','Literal zero is used as the divisor.','CRITICAL',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.While) and isinstance(n.test,ast.Constant) and n.test.value is True:
-            issue(out,'INFINITE_LOOP_RISK',rel(root,path),n.lineno,'Possible infinite loop','Condition is always True; verify a reachable break.','MEDIUM')
+            issue(out,'INFINITE_LOOP_RISK',rel(root,path),n.lineno,'Possible infinite loop','Condition is always True; verify a reachable break.','MEDIUM',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.Try):
             for h in n.handlers:
                 if h.type is None:
-                    issue(out,'BARE_EXCEPT',rel(root,path),h.lineno,'Bare except','Bare except catches every exception.','MEDIUM')
+                    issue(out,'BARE_EXCEPT',rel(root,path),h.lineno,'Bare except','Bare except catches every exception.','MEDIUM',getattr(h,'col_offset',0)+1)
         if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and len(n.body)==1 and isinstance(n.body[0],ast.Pass):
-            issue(out,'EMPTY_FUNCTION',rel(root,path),n.lineno,'Empty function','Function body contains only pass.','LOW')
+            issue(out,'EMPTY_FUNCTION',rel(root,path),n.lineno,'Empty function','Function body contains only pass.','LOW',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.Subscript) and isinstance(n.value,(ast.List,ast.Tuple)) and isinstance(n.slice,ast.Constant) and isinstance(n.slice.value,int):
             i,size=n.slice.value,len(n.value.elts)
             if i>=size or i< -size:
-                issue(out,'INDEX_ERROR',rel(root,path),n.lineno,'Index out of range',f'Index {i} is outside literal sequence length {size}.','HIGH')
+                issue(out,'INDEX_ERROR',rel(root,path),n.lineno,'Index out of range',f'Index {i} is outside literal sequence length {size}.','HIGH',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.Assert) and isinstance(n.test,ast.Constant) and n.test.value is False:
-            issue(out,'ALWAYS_FAILING_ASSERT',rel(root,path),n.lineno,'Always-failing assertion','assert False always raises AssertionError.','HIGH')
+            issue(out,'ALWAYS_FAILING_ASSERT',rel(root,path),n.lineno,'Always-failing assertion','assert False always raises AssertionError.','HIGH',getattr(n,'col_offset',0)+1)
         if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='open':
             for kw in n.keywords:
                 if kw.arg=='mode' and isinstance(kw.value,ast.Constant) and kw.value.value=='w':
