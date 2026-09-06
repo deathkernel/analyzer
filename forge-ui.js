@@ -174,10 +174,9 @@
         incoming.get(e.target).push(e.source);
       });
 
-      // Calculate minimum directed distance from the selected file in both
-      // directions. Every reachable step gets its own visual layer.
       const inDist=new Map([[focus,0]]);
       const outDist=new Map([[focus,0]]);
+
       let q=[focus];
       while(q.length){
         const id=q.shift();
@@ -185,6 +184,7 @@
           if(!inDist.has(next)){inDist.set(next,inDist.get(id)+1);q.push(next);}
         }
       }
+
       q=[focus];
       while(q.length){
         const id=q.shift();
@@ -196,83 +196,50 @@
       const leftGroups=new Map(),rightGroups=new Map();
       nodes.forEach(n=>{
         if(n.id===focus)return;
-        if(inDist.has(n.id) && (!outDist.has(n.id) || inDist.get(n.id)<=outDist.get(n.id))){
-          const d=inDist.get(n.id);
-          if(!leftGroups.has(d))leftGroups.set(d,[]);
-          leftGroups.get(d).push(n);
-        }else if(outDist.has(n.id)){
-          const d=outDist.get(n.id);
-          if(!rightGroups.has(d))rightGroups.set(d,[]);
-          rightGroups.get(d).push(n);
+        const inD=inDist.get(n.id),outD=outDist.get(n.id);
+        if(inD!==undefined && (outD===undefined || inD<=outD)){
+          if(!leftGroups.has(inD))leftGroups.set(inD,[]);
+          leftGroups.get(inD).push(n);
+        }else if(outD!==undefined){
+          if(!rightGroups.has(outD))rightGroups.set(outD,[]);
+          rightGroups.get(outD).push(n);
         }
       });
 
-      // Adaptive full-canvas layout.
-      // Two-sided networks keep the selected file near the center. For a
-      // one-sided network, the selected file shifts toward the empty side so
-      // the recursive chain uses the entire canvas instead of half the screen.
-      const maxInbound=Math.max(0,...inDist.values());
-      const maxOutbound=Math.max(0,...outDist.values());
-      const hasInbound=leftDistances.length>0;
-      const hasOutbound=rightDistances.length>0;
+      const leftDistances=[...leftGroups.keys()].sort((a,b)=>b-a);
+      const rightDistances=[...rightGroups.keys()].sort((a,b)=>a-b);
 
-      let focusX=600;
-      let columnXs=[];
+      const columns=[];
+      leftDistances.forEach(d=>columns.push({side:'in',distance:d,nodes:leftGroups.get(d)}));
+      columns.push({side:'focus',distance:0,nodes:[by[focus]]});
+      rightDistances.forEach(d=>columns.push({side:'out',distance:d,nodes:rightGroups.get(d)}));
 
-      if(hasInbound && hasOutbound){
-        const total=leftDistances.length+1+rightDistances.length;
-        const step=1010/Math.max(1,total-1);
-        columnXs=Array.from({length:total},(_,i)=>90+i*step);
-      }else if(hasOutbound){
-        const total=1+rightDistances.length;
-        const step=1010/Math.max(1,total-1);
-        columnXs=Array.from({length:total},(_,i)=>90+i*step);
-      }else if(hasInbound){
-        const total=leftDistances.length+1;
-        const step=1010/Math.max(1,total-1);
-        columnXs=Array.from({length:total},(_,i)=>90+i*step);
-      }else{
-        columnXs=[600];
-      }
-
-      let colIndex=0;
-      leftDistances.forEach(()=>{colIndex++;});
-      const focusIndex=hasInbound ? leftDistances.length : 0;
-      focusX=columnXs[focusIndex] ?? 600;
+      const columnCount=Math.max(1,columns.length);
+      const leftX=55,rightX=1145;
+      const step=columnCount===1?0:(rightX-leftX)/(columnCount-1);
 
       const placeColumn=(arr,x)=>{
         const sorted=arr.slice().sort((a,b)=>{
           const degree=(Number(b.degree)||0)-(Number(a.degree)||0);
           return degree||String(a.label||'').localeCompare(String(b.label||''));
         });
-        const top=55,bottom=645,gap=(bottom-top)/Math.max(1,sorted.length-1);
+        const top=48,bottom=652,gap=(bottom-top)/Math.max(1,sorted.length-1);
         sorted.forEach((n,i)=>{
           state.positions[n.id]={x,y:sorted.length===1?350:top+i*gap};
         });
       };
 
-      leftDistances.forEach((d,i)=>{
-        const x=columnXs[i];
-        placeColumn(leftGroups.get(d)||[],x);
-      });
-      placeColumn([by[focus]],focusX);
-
-      const rightStart=focusIndex+1;
-      rightDistances.forEach((d,i)=>{
-        const x=columnXs[Math.min(columnXs.length-1,rightStart+i)];
-        placeColumn(rightGroups.get(d)||[],x);
+      columns.forEach((col,i)=>{
+        const x=leftX+i*step;
+        placeColumn(col.nodes,x);
       });
 
-      // Keep the recursive depth visible in the HUD.
-      layerCount=Math.max(1,columnXs.length);
-      text('graphInfo','FULL FILE NETWORK // '+nodes.length+' NODES // '+realEdges.length+' LINKS');
-      text('hudDepth',String(Math.max(maxInbound,maxOutbound)).padStart(2,'0'));
-      text('hudBlast',String(Math.max(0,nodes.length-1)).padStart(2,'0'));
-      layerCount=columns.length;
       const incomingCount=realEdges.filter(e=>e.target===focus).length;
       const outgoingCount=realEdges.filter(e=>e.source===focus).length;
-      const maxIn=Math.max(0,...[...inDist.values()]);
-      const maxOut=Math.max(0,...[...outDist.values()]);
+      const maxIn=Math.max(0,...inDist.values());
+      const maxOut=Math.max(0,...outDist.values());
+
+      layerCount=columnCount;
       text('graphInfo','FULL FILE NETWORK // '+nodes.length+' NODES // '+realEdges.length+' LINKS');
       text('hudDepth',String(Math.max(maxIn,maxOut)).padStart(2,'0'));
       text('hudBlast',String(Math.max(0,nodes.length-1)).padStart(2,'0'));
