@@ -87,7 +87,7 @@ def python_checks(text,path,root,out,m):
 
 def _normalized_duplicate_key(line):
     s=re.sub(r'\s+',' ',line.strip())
-    s=re.sub(r'(["']).*?\1','"<literal>"',s)
+    s=re.sub(r'''(["']).*?\1''', '"<literal>"', s)
     return s[:260]
 
 def duplication_stats(text):
