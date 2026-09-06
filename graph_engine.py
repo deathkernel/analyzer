@@ -153,6 +153,105 @@ def build_graph(root,fs,contents):
     for n in nodes:nodes[n].update(positions.get(n,{'x':110,'y':40}),rank=rank.get(n,0))
     return list(nodes.values()),edges
 
+def _cycle_components(nodes,edges):
+    ids={n['id'] for n in nodes}
+    adj=defaultdict(list)
+    for e in edges:
+        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:
+            adj[e['source']].append(e['target'])
+    index=0;stack=[];onstack=set();indices={};low={};components=[]
+    def visit(v):
+        nonlocal index
+        indices[v]=index;low[v]=index;index+=1;stack.append(v);onstack.add(v)
+        for w in adj[v]:
+            if w not in indices:
+                visit(w);low[v]=min(low[v],low[w])
+            elif w in onstack:
+                low[v]=min(low[v],indices[w])
+        if low[v]==indices[v]:
+            comp=[]
+            while True:
+                w=stack.pop();onstack.remove(w);comp.append(w)
+                if w==v:break
+            if len(comp)>1:components.append(comp)
+            elif comp and comp[0] in adj[comp[0]]:components.append(comp)
+    for v in sorted(ids):
+        if v not in indices:visit(v)
+    return components
+
+def _impact(nodes,edges,focus_id=None):
+    if not focus_id:return {'focused':None,'upstream':[],'downstream':[],'blast_radius':0}
+    incoming=defaultdict(list);outgoing=defaultdict(list)
+    for e in edges:
+        if e['kind'] in ('import','neural'):
+            outgoing[e['source']].append(e['target']);incoming[e['target']].append(e['source'])
+    def walk(start,adj):
+        seen=set();q=deque([start])
+        while q:
+            x=q.popleft()
+            for y in adj.get(x,[]):
+                if y not in seen and y!=start:seen.add(y);q.append(y)
+        return seen
+    up=walk(focus_id,incoming);down=walk(focus_id,outgoing)
+    labels={n['id']:n.get('path',n.get('label')) for n in nodes}
+    return {'focused':labels.get(focus_id,focus_id),'upstream':sorted(labels[x] for x in up),'downstream':sorted(labels[x] for x in down),'blast_radius':len(up|down)}
+
+def _xray(nodes,edges):
+    roles=Counter(n.get('role','module') for n in nodes)
+    ids={n['id'] for n in nodes}
+    adjacency=defaultdict(list)
+    for e in edges:
+        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:adjacency[e['source']].append(e['target'])
+    entry=[n for n in nodes if n.get('role')=='entrypoint']
+    data={n['id'] for n in nodes if n.get('role')=='data'}
+    paths=[]
+    for e in entry:
+        q=deque([(e['id'],[e.get('path',e['label'])])]);seen={e['id']}
+        while q:
+            cur,path=q.popleft()
+            if cur in data:
+                paths.append(path);continue
+            for nb in adjacency[cur]:
+                if nb not in seen:
+                    seen.add(nb);node=next((x for x in nodes if x['id']==nb),None)
+                    if node:q.append((nb,path+[node.get('path',node['label'])]))
+    return {'roles':dict(roles),'entrypoints':[n.get('path',n.get('label')) for n in entry],'data_nodes':len(data),'flows':paths[:30]}
+
+def _dead_code(nodes,edges,contents=None):
+    contents=contents or {}
+    incoming=Counter(e['target'] for e in edges if e['kind'] in ('import','neural'))
+    candidates=[]
+    for n in nodes:
+        if n.get('kind')!='file':continue
+        if incoming[n['id']]==0 and n.get('role')!='entrypoint':
+            candidates.append({'path':n.get('path'),'reason':'No inbound dependency edge'})
+    if contents:
+        for f,text in contents.items():
+            if str(getattr(f,'suffix','')).lower()=='.py':
+                try:
+                    tree=ast.parse(text)
+                except Exception:
+                    continue
+                refs=Counter(x.id for x in ast.walk(tree) if isinstance(x,ast.Name) and isinstance(x.ctx,ast.Load))
+                for node in ast.walk(tree):
+                    if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)) and node.name not in refs and not node.name.startswith('_'):
+                        candidates.append({'path':str(f),'line':node.lineno,'symbol':node.name,'reason':'Defined but never referenced in module'})
+    unique=[];seen=set()
+    for x in candidates:
+        k=(x.get('path'),x.get('line'),x.get('symbol'),x.get('reason'))
+        if k not in seen:seen.add(k);unique.append(x)
+    return unique[:200]
+
+def intelligence_report(nodes,edges,contents=None,focus_id=None):
+    cycles=_cycle_components(nodes,edges)
+    return {
+        'cycles':[ [next((n.get('path',n.get('label')) for n in nodes if n['id']==i),i) for i in comp] for comp in cycles ],
+        'cycle_count':len(cycles),
+        'impact':_impact(nodes,edges,focus_id),
+        'xray':_xray(nodes,edges),
+        'dead_code':_dead_code(nodes,edges,contents)
+    }
+
 def graph_metrics(nodes,edges):
     deg=Counter();imports=neural=contains=0
     for e in edges:
