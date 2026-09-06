@@ -309,3 +309,40 @@ body:has(#graph.activeTab) .graphbox .node .core{
   stroke:#a4efff!important;stroke-width:1.7!important;fill:#061823!important;
   filter:drop-shadow(0 0 8px #58d8ffcc)!important;
 }
+
+/* CLEAN NEURAL PRESENTATION */
+body:has(#graph.activeTab) .graphbox .ghostEdges,
+body:has(#graph.activeTab) .graphbox .edgeLabel{display:none!important}
+body:has(#graph.activeTab) .graphbox .layerGuides{pointer-events:none}
+body:has(#graph.activeTab) .graphbox .layerGuide{
+  stroke:#58d8ff24!important;
+  stroke-width:1!important;
+  stroke-dasharray:3 11!important;
+}
+body:has(#graph.activeTab) .graphbox .layerLabel{
+  fill:#7faebb!important;
+  font-size:7px!important;
+  letter-spacing:2.5px!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge{
+  stroke:#8ee7fb!important;
+  stroke-width:1.55!important;
+  opacity:.68!important;
+  filter:none!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.import{
+  stroke:#dfffff!important;
+  stroke-width:1.9!important;
+  opacity:.9!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge.neural{
+  stroke:#73cfe8!important;
+  stroke-width:1.25!important;
+  opacity:.5!important;
+}
+body:has(#graph.activeTab) .graphbox .actualEdges .stream{
+  stroke:#f2ffff!important;
+  stroke-width:1.8!important;
+  opacity:.7!important;
+  filter:drop-shadow(0 0 3px #58d8ff88)!important;
+}
