@@ -93,27 +93,12 @@
     const allNodes=(graph.nodes||[]).filter(n=>n.kind!=='folder');
     const allEdges=(graph.edges||[]).filter(e=>e.kind!=='contains');
 
-    // Focus mode: selecting a file isolates its local neural neighbourhood.
-    // We keep every real edge inside that neighbourhood; nothing is deleted
-    // from the backend graph, only the viewport is scoped to the selected node.
+    // SINGLE-FILE FOCUS MODE:
+    // When a file/node is touched, show ONLY that file.
+    // No neighboring file nodes or edges are rendered.
     let nodes=allNodes;
     if(state.focused){
-      const adjacency=new Map();
-      allNodes.forEach(n=>adjacency.set(n.id,new Set()));
-      allEdges.forEach(e=>{
-        if(adjacency.has(e.source)&&adjacency.has(e.target)){
-          adjacency.get(e.source).add(e.target);
-          adjacency.get(e.target).add(e.source);
-        }
-      });
-      const keep=new Set([state.focused]);
-      let frontier=new Set([state.focused]);
-      for(let hop=0;hop<2;hop++){
-        const next=new Set();
-        frontier.forEach(id=>(adjacency.get(id)||[]).forEach(nb=>{if(!keep.has(nb)){keep.add(nb);next.add(nb);}}));
-        frontier=next;
-      }
-      nodes=allNodes.filter(n=>keep.has(n.id));
+      nodes=allNodes.filter(n=>n.id===state.focused);
     }
 
     // Neural-network presentation: arrange the visible neighbourhood in layers.
