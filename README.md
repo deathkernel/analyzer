@@ -6,11 +6,11 @@ Local, read-only, polyglot code-intelligence cockpit.
 
 - `app.py` — local HTTP server, watcher, API surface, orchestration.
 - `scanner.py` — language detection, source discovery, Python AST checks, security/quality heuristics, metrics and project DNA.
-- `graph_engine.py` — dependency extraction, folder topology, layered graph layout and graph metrics.
+- `graph_engine.py` — dependency extraction, semantic framework relationships, folder topology, layered graph layout and graph metrics.
 - `index.html` — Forge command-center UI, source explorer, search, security radar, evolution telemetry and interactive neural graph.
 - `style.css` — base cinematic visual system.
 
-The old three-file constraint is intentionally removed. The project is now split by responsibility so new analysis engines can be added without turning one file into a monolith.
+The project is split by responsibility so new analysis engines can be added without turning one file into a monolith.
 
 ## Current capabilities
 
@@ -25,9 +25,14 @@ The old three-file constraint is intentionally removed. The project is now split
 - Global code search.
 - Security radar.
 - Dependency + folder architecture graph.
-- Graph modes: all signals, dependencies, folder topology and hot-node focus.
+- Semantic neural architecture graph that infers runtime relationships such as entrypoint → routes, routes → database, route → template, template → asset and template composition.
+- A dedicated `FRESHERFLOW NEURAL` graph mode for visualizing the architecture patterns used by the FresherFlow Flask project.
 - Node dragging, zoom, center, tracing, animated dependency flow, live packet HUD and graph telemetry.
 - Responsive cockpit layout for smaller screens.
+
+## FresherFlow neural map
+
+Forge recognizes common FresherFlow-style Flask conventions without executing the target project. For a FresherFlow checkout, the neural graph can expose the main application bootstrap, authentication/student/employer route modules, database layer, templates and static assets as connected architectural signals. The underlying analysis remains read-only.
 
 ## Run
 
