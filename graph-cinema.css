@@ -387,3 +387,21 @@ body:has(#graph.activeTab) .graphbox .actualEdges .stream{
   filter:drop-shadow(0 0 3px #58d8ff88)!important;
   animation:layerFlow 1.6s linear infinite!important;
 }
+
+/* COMPLETE NEURAL MESH */
+body:has(#graph.activeTab) .graphbox .denseEdges{pointer-events:none}
+body:has(#graph.activeTab) .graphbox .denseEdge{
+  fill:none!important;
+  stroke:#79cfe6!important;
+  stroke-width:1.05!important;
+  opacity:.34!important;
+  vector-effect:non-scaling-stroke;
+}
+body:has(#graph.activeTab) .graphbox .dense-0{opacity:.30!important}
+body:has(#graph.activeTab) .graphbox .dense-1{opacity:.34!important}
+body:has(#graph.activeTab) .graphbox .dense-2{opacity:.38!important}
+body:has(#graph.activeTab) .graphbox .dense-3{opacity:.32!important}
+body:has(#graph.activeTab) .graphbox .dense-4{opacity:.28!important}
+body:has(#graph.activeTab) .graphbox .actualEdges .edge{
+  position:relative;
+}
