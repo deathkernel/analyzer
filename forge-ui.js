@@ -107,35 +107,37 @@
     }
 
     // Neural-network presentation.
-    // Focus mode places the selected file in the center with explicit
-    // inbound/source and outbound/destination columns.
+    // Focus mode keeps the selected file as the core and renders its full
+    // one-hop network with explicit source -> core -> destination flow.
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
     const realEdges=allEdges.filter(edgeVisible).filter(e=>by[e.source]&&by[e.target]);
 
     let byLayer=new Map();
-    let layerCount=3;
-    if(state.focused){
-      const incoming=nodes.filter(n=>n.id!==state.focused && realEdges.some(e=>e.target===state.focused&&e.source===n.id));
-      const outgoing=nodes.filter(n=>n.id!==state.focused && realEdges.some(e=>e.source===state.focused&&e.target===n.id));
-      const center=by[state.focused];
-      const both=incoming.filter(n=>outgoing.some(x=>x.id===n.id));
-      const columns=[
-        incoming.filter(n=>!both.some(x=>x.id===n.id)),
-        [center],
-        outgoing.filter(n=>!both.some(x=>x.id===n.id))
-      ];
-      columns[0].push(...both);
-      byLayer.set(0,columns[0]); byLayer.set(1,columns[1]); byLayer.set(2,columns[2]);
+    let layerCount=6;
 
-      const xs=[170,600,1030],top=80,bottom=620;
-      columns.forEach((arr,idx)=>{
+    if(state.focused){
+      const focus=state.focused;
+      const incomingIds=new Set(realEdges.filter(e=>e.target===focus).map(e=>e.source));
+      const outgoingIds=new Set(realEdges.filter(e=>e.source===focus).map(e=>e.target));
+      const sourceNodes=nodes.filter(n=>incomingIds.has(n.id)&&n.id!==focus)
+        .sort((a,b)=>(Number(b.degree)||0)-(Number(a.degree)||0));
+      const destNodes=nodes.filter(n=>outgoingIds.has(n.id)&&n.id!==focus)
+        .sort((a,b)=>(Number(b.degree)||0)-(Number(a.degree)||0));
+
+      byLayer.set(0,sourceNodes);
+      byLayer.set(1,[by[focus]]);
+      byLayer.set(2,destNodes);
+      layerCount=3;
+
+      const xs=[155,600,1045],top=55,bottom=645;
+      [sourceNodes,[by[focus]],destNodes].forEach((arr,idx)=>{
         const gap=(bottom-top)/Math.max(1,arr.length-1);
         arr.forEach((n,i)=>{state.positions[n.id]={x:xs[idx],y:arr.length===1?350:top+i*gap};});
       });
 
-      const incomingCount=realEdges.filter(e=>e.target===state.focused).length;
-      const outgoingCount=realEdges.filter(e=>e.source===state.focused).length;
-      text('graphInfo','FILE FOCUS // '+incomingCount+' IN / '+outgoingCount+' OUT');
+      const incomingCount=realEdges.filter(e=>e.target===focus).length;
+      const outgoingCount=realEdges.filter(e=>e.source===focus).length;
+      text('graphInfo','FILE NETWORK // '+incomingCount+' INBOUND / '+outgoingCount+' OUTBOUND');
       text('hudDepth','03');
       text('hudBlast',String(incomingCount+outgoingCount).padStart(2,'0'));
     } else {
@@ -162,31 +164,31 @@
 
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(realEdges.length).padStart(2,'0'));
-    text('hudMode',state.focused?'FILE FOCUS':'FULL NETWORK');
+    text('hudMode',state.focused?'FILE NETWORK':'FULL NETWORK');
 
     const defs='<defs>'+
-      '<marker id="arrowIn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7de2ff"/></marker>'+
-      '<marker id="arrowOut" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e9fdff"/></marker>'+
+      '<marker id="arrowIn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#65dfff"/></marker>'+
+      '<marker id="arrowOut" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f2ffff"/></marker>'+
       '</defs>';
 
-    const labels=state.focused?['INBOUND / SOURCES','FOCUS','OUTBOUND / DESTINATIONS']:['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
+    const labels=state.focused?['SOURCE / INBOUND','TARGET FILE','DESTINATION / OUTBOUND']:['INPUT','HIDDEN 1','HIDDEN 2','HIDDEN 3','HIDDEN 4','OUTPUT'];
     const guideCount=state.focused?3:layerCount;
     const guides=Array.from({length:guideCount},(_,layer)=>{
       const arr=byLayer.get(layer)||[];
-      const x=arr.length?state.positions[arr[0].id].x:600;
+      const fallback=state.focused?[155,600,1045][layer]:95+(layer/Math.max(1,layerCount-1))*1010;
+      const x=arr.length?state.positions[arr[0].id].x:fallback;
       return '<line class="layerGuide" x1="'+x+'" y1="38" x2="'+x+'" y2="662"/>'+
              '<text class="layerLabel" x="'+x+'" y="24">'+esc(labels[layer]||('LAYER '+(layer+1)))+'</text>';
     }).join('');
 
     let dense='';
     if(!state.focused){
-      const parts=[];let denseIndex=0;
+      const parts=[];let di=0;
       for(let layer=0;layer<layerCount-1;layer++){
-        const sourceLayer=byLayer.get(layer)||[],targetLayer=byLayer.get(layer+1)||[];
-        sourceLayer.forEach(s=>targetLayer.forEach(t=>{
+        const aa=byLayer.get(layer)||[],bb=byLayer.get(layer+1)||[];
+        aa.forEach(s=>bb.forEach(t=>{
           const p=state.positions[s.id],q=state.positions[t.id];
-          parts.push('<path class="denseEdge dense-'+(denseIndex%5)+'" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');
-          denseIndex++;
+          parts.push('<path class="denseEdge dense-'+(di%5)+'" d="M'+p.x+','+p.y+' L'+q.x+','+q.y+'"/>');di++;
         }));
       }
       dense=parts.join('');
@@ -198,15 +200,15 @@
       const focusedIncoming=state.focused&&e.target===state.focused;
       const focusedOutgoing=state.focused&&e.source===state.focused;
       const bidirectional=state.focused&&focusedIncoming&&realEdges.some(x=>x.source===e.target&&x.target===e.source);
-      const bend=state.focused?Math.max(10,Math.min(46,Math.abs(q.y-p.y)*.05)):Math.max(12,Math.min(55,Math.abs(q.y-p.y)*.06));
+      const bend=state.focused?Math.max(12,Math.min(60,Math.abs(q.y-p.y)*.08)):Math.max(12,Math.min(55,Math.abs(q.y-p.y)*.06));
       const mid=(p.x+q.x)/2;
       const d='M'+p.x+','+p.y+' C'+mid+','+(p.y-bend)+' '+mid+','+(q.y+bend)+' '+q.x+','+q.y;
       const marker=focusedIncoming?'url(#arrowIn)':'url(#arrowOut)';
       const cls=(focusedIncoming?' inbound':focusedOutgoing?' outbound':'')+(bidirectional?' bidirectional':'');
-      const relation=bidirectional?'BIDIRECTIONAL':(focusedIncoming?'IN':'OUT');
+      const relation=bidirectional?'BIDIR':(focusedIncoming?'IN':'OUT');
       return '<path class="edge '+esc(e.kind)+cls+'" d="'+d+'" marker-end="'+marker+'"/>'+
              '<path class="stream" d="'+d+'" style="animation-delay:-'+((i%19)*.07)+'s;display:'+(state.fx?'block':'none')+'"/>'+
-             (state.focused?'<text class="directionLabel '+(focusedIncoming?'inLabel':'outLabel')+'" x="'+mid+'" y="'+((p.y+q.y)/2-5)+'">'+relation+'</text>':'');
+             (state.focused?'<text class="directionLabel '+(focusedIncoming?'inLabel':'outLabel')+'" x="'+mid+'" y="'+((p.y+q.y)/2-6)+'">'+relation+'</text>':'');
     }).join('');
 
 
