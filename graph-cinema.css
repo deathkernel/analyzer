@@ -214,3 +214,64 @@ body:has(#graph.activeTab) .graphbox .node text.type{font-size:5.5px;fill:#3e687
 @keyframes signalPulse{50%{opacity:.18;transform:scale(.65)}}
 @keyframes reticleSpin{to{transform:rotate(360deg)}}
 @keyframes nodeBreath{50%{opacity:.58}}
+
+/* LAYERED NEURAL MODE */
+body:has(#graph.activeTab) .graphbox .layerGuides{opacity:.85}
+body:has(#graph.activeTab) .graphbox .layerGuide{
+  stroke:#58d8ff1b;stroke-width:1;stroke-dasharray:2 10
+}
+body:has(#graph.activeTab) .graphbox .layerLabel{
+  fill:#5e8999;font:7px Consolas;letter-spacing:3px;text-anchor:middle
+}
+body:has(#graph.activeTab) .graphbox .edge{
+  stroke:#6fc7df;stroke-width:1.05;opacity:.42;
+  filter:drop-shadow(0 0 3px #58d8ff55)
+}
+body:has(#graph.activeTab) .graphbox .edge.import{
+  stroke:#8de6ff;stroke-width:1.35;opacity:.72
+}
+body:has(#graph.activeTab) .graphbox .edge.neural{
+  stroke:#c7f5ff;stroke-width:1;opacity:.52
+}
+body:has(#graph.activeTab) .graphbox .stream{
+  stroke:#eaffff;stroke-width:2;stroke-dasharray:2 26;opacity:.65;
+  animation:layerFlow 1.8s linear infinite
+}
+body:has(#graph.activeTab) .graphbox .node .core{
+  fill:#05131b;stroke:#7ce6ff;stroke-width:1.5;
+  filter:drop-shadow(0 0 7px #58d8ff99)
+}
+body:has(#graph.activeTab) .graphbox .node .halo{
+  fill:#58d8ff05;stroke:#58d8ff22;stroke-width:1
+}
+body:has(#graph.activeTab) .graphbox .node .ring{
+  fill:none;stroke:#58d8ff30;stroke-width:1;stroke-dasharray:2 7
+}
+body:has(#graph.activeTab) .graphbox .node.entrypoint .core{
+  fill:#093547;stroke:#d8fbff;filter:drop-shadow(0 0 14px #58d8ffdd)
+}
+body:has(#graph.activeTab) .graphbox .node.controller .core{
+  stroke:#76dcff
+}
+body:has(#graph.activeTab) .graphbox .node.data .core{
+  fill:#102833;stroke:#8cf0ff
+}
+body:has(#graph.activeTab) .graphbox .node.view .core{
+  fill:#122b35;stroke:#9feaff
+}
+body:has(#graph.activeTab) .graphbox .node.asset .core{
+  fill:#0a242d;stroke:#65cfe7
+}
+body:has(#graph.activeTab) .graphbox .node.module .core{
+  fill:#071a22;stroke:#6bcde4
+}
+body:has(#graph.activeTab) .graphbox .node text.name{
+  font-size:8px;fill:#d7faff;letter-spacing:.4px
+}
+body:has(#graph.activeTab) .graphbox .node text.type{
+  font-size:5.5px;fill:#4d7f90;letter-spacing:1px
+}
+body:has(#graph.activeTab) .graphbox .edgeLabel{
+  fill:#4b7e8f;font:5px Consolas;letter-spacing:1px;opacity:.55
+}
+@keyframes layerFlow{to{stroke-dashoffset:-84}}
