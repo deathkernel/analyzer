@@ -3,7 +3,7 @@
 
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, positions:{} };
+  const state = { data: {files:[], issues:[], graph:{nodes:[],edges:[]}, history:[]}, mode:'all', fx:true, hot:false, minimap:false, selected:null, positions:{}, drag:null, renderQueued:false };
 
   function text(id, value) { const el=$(id); if(el) el.textContent=String(value ?? ''); }
   function html(id, value) { const el=$(id); if(el) el.innerHTML=value; }
@@ -33,7 +33,7 @@
       '<div class="languages"><small>LANGUAGE MATRIX</small><p>'+Object.entries(state.data.languages||{}).map(([k,v])=>'<b>'+esc(k)+'</b> '+esc(v)).join('　')+'</p></div>');
   }
 
-  function icon(ext){ return ({'.py':'PY','.js':'JS','.jsx':'JS','.ts':'TS','.tsx':'TS','.java':'JV','.cpp':'C+','.c':'C','.cs':'C#','.go':'GO','.rs':'RS','.rb':'RB','.php':'PH','.html':'HT','.css':'CS','.sql':'DB','.rs':'RS'})[ext]||'<>'; }
+  function icon(ext){ return ({'.py':'PY','.js':'JS','.jsx':'JS','.ts':'TS','.tsx':'TS','.java':'JV','.cpp':'C+','.c':'C','.cs':'C#','.go':'GO','.rs':'RS','.rb':'RB','.php':'PH','.html':'HT','.css':'CS','.sql':'DB'})[ext]||'<>'; }
 
   function renderFiles(){
     const filter=($('fileFilter')?.value||'').toLowerCase();
@@ -76,10 +76,16 @@
   function switchTab(id){
     document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('activeTab',el.id===id));
     document.querySelectorAll('.nav').forEach(el=>el.classList.toggle('active',el.dataset.tab===id));
-    if(id==='graph') requestAnimationFrame(()=>renderGraph());
+    if(id==='graph') requestAnimationFrame(renderGraph);
   }
 
   function edgeVisible(e){ return state.mode==='all'||e.kind===state.mode; }
+
+  function queueGraphRender(){
+    if(state.renderQueued)return;
+    state.renderQueued=true;
+    requestAnimationFrame(()=>{state.renderQueued=false;renderGraph();});
+  }
 
   function renderGraph(){
     const svg=$('graphSvg'); if(!svg)return;
@@ -88,9 +94,10 @@
     text('hudDepth',String(Math.max(0,...nodes.map(n=>Number(n.rank)||0))).padStart(2,'0')); text('hudMode',state.mode.toUpperCase());
     const by=Object.fromEntries(nodes.map(n=>[n.id,n]));
     nodes.forEach(n=>{ if(!state.positions[n.id]) state.positions[n.id]={x:Number(n.x)||100,y:Number(n.y)||100}; });
+    const maxDegree=Math.max(0,...nodes.map(n=>Number(n.degree)||0));
     const defs='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#58d8ff"/></marker></defs>';
-    const paths=edges.map((e,i)=>{const a=by[e.source],b=by[e.target];if(!a||!b)return '';const p=state.positions[a.id],q=state.positions[b.id],mx=(p.x+q.x)/2;return '<path class="edge '+esc(e.kind)+'" d="M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y+'" marker-end="url(#arrow)"/><path class="flow" d="M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y+'" style="animation-delay:-'+((i%9)*.17)+'s;display:'+(state.fx?'block':'none')+'"/>';}).join('');
-    const ns=nodes.map(n=>{const p=state.positions[n.id],hot=state.hot&&Number(n.degree||0)<2;return '<g class="node '+esc(n.kind)+' '+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'"><circle class="halo" r="'+(hot?14:24)+'"/><circle class="core" r="'+(n.kind==='folder'?13:9)+'"/><circle class="ring" r="'+(n.kind==='folder'?19:14)+'"/><text class="name" y="28">'+esc(String(n.label||'').length>22?String(n.label).slice(0,21)+'…':n.label)+'</text><text class="type" y="39">'+esc(n.kind==='folder'?'FOLDER':n.language||'FILE')+' • '+esc(n.degree||0)+' LINKS</text></g>';}).join('');
+    const paths=edges.map((e,i)=>{const a=by[e.source],b=by[e.target];if(!a||!b)return '';const p=state.positions[a.id],q=state.positions[b.id],mx=(p.x+q.x)/2;const d='M'+p.x+','+p.y+' C'+mx+','+p.y+' '+mx+','+q.y+' '+q.x+','+q.y;return '<path class="edge '+esc(e.kind)+'" d="'+d+'" marker-end="url(#arrow)"/><path class="flow" d="'+d+'" style="animation-delay:-'+((i%9)*.17)+'s;display:'+(state.fx?'block':'none')+'"/>';}).join('');
+    const ns=nodes.map(n=>{const p=state.positions[n.id],degree=Number(n.degree||0),hot=state.hot&&degree===maxDegree&&maxDegree>0;return '<g class="node '+esc(n.kind)+' '+(hot?'hot ':'')+(state.selected===n.id?'selected':'')+'" transform="translate('+p.x+' '+p.y+')" data-id="'+esc(n.id)+'"><circle class="halo" r="'+(hot?28:24)+'"/><circle class="core" r="'+(n.kind==='folder'?13:9)+'"/><circle class="ring" r="'+(n.kind==='folder'?19:14)+'"/><text class="name" y="28">'+esc(String(n.label||'').length>22?String(n.label).slice(0,21)+'…':n.label)+'</text><text class="type" y="39">'+esc(n.kind==='folder'?'FOLDER':n.language||'FILE')+' • '+esc(n.degree||0)+' LINKS</text></g>';}).join('');
     svg.innerHTML=defs+paths+ns;
     bindNodes();
   }
@@ -101,7 +108,11 @@
       el.addEventListener('mouseleave',hideTip);
       el.addEventListener('click',e=>{e.stopPropagation();state.selected=el.dataset.id;renderGraph();});
       el.addEventListener('dblclick',e=>{e.stopPropagation();const n=(state.data.graph.nodes||[]).find(x=>x.id===el.dataset.id);if(n?.kind==='file')openFile(n.path);});
-      el.addEventListener('mousedown',e=>{e.stopPropagation();const n=(state.data.graph.nodes||[]).find(x=>x.id===el.dataset.id);if(n) state.drag={n,ox:e.clientX,oy:e.clientY,sx:state.positions[n.id].x,sy:state.positions[n.id].y};});
+      el.addEventListener('mousedown',e=>{
+        e.stopPropagation();
+        const n=(state.data.graph.nodes||[]).find(x=>x.id===el.dataset.id);
+        if(n)state.drag={n,ox:e.clientX,oy:e.clientY,sx:state.positions[n.id].x,sy:state.positions[n.id].y};
+      });
     });
   }
 
@@ -126,8 +137,8 @@
       html('bugs',(d.bugs||[]).length?d.bugs.map(issueCard).join(''):'<div class="empty">✓ NO ANOMALIES DETECTED</div>');
       html('activity',(d.activity||[]).map(x=>'<div>› '+esc(x)+'</div>').join('')||'<div class="empty">Waiting for telemetry...</div>');
       renderDNA();renderFiles();renderSecurity();renderHistory();renderGraph();
-      if(d.error) showError('Backend scan error',d.error);
-    }catch(e){ text('watch','OFFLINE'); showError('Cannot reach Forge server',e.message); }
+      if(d.error)showError('Backend scan error',d.error);
+    }catch(e){text('watch','OFFLINE');showError('Cannot reach Forge server',e.message);}
   }
 
   function init(){
@@ -139,15 +150,23 @@
     $('results')?.addEventListener('click',e=>{const el=e.target.closest('[data-search-file]');if(el)openFile(decodeURIComponent(el.dataset.searchFile));});
     document.querySelectorAll('.graph-controls [data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;document.querySelectorAll('.graph-controls [data-mode]').forEach(x=>x.classList.toggle('active',x===b));renderGraph();}));
     $('hotBtn')?.addEventListener('click',focusHot); $('centerBtn')?.addEventListener('click',centerGraph); $('fxBtn')?.addEventListener('click',toggleFX); $('miniBtn')?.addEventListener('click',toggleMinimap);
-    $('graphSvg')?.addEventListener('mousemove',e=>{if(!state.drag)return;const r=$('graphbox').getBoundingClientRect();const dx=(e.clientX-state.drag.ox)/r.width*1200,dy=(e.clientY-state.drag.oy)/r.height*700;state.positions[state.drag.n.id]={x:state.drag.sx+dx,y:state.drag.sy+dy};renderGraph();});
+    $('graphSvg')?.addEventListener('mousemove',e=>{
+      if(!state.drag)return;
+      const r=$('graphbox').getBoundingClientRect();
+      const dx=(e.clientX-state.drag.ox)/r.width*1200,dy=(e.clientY-state.drag.oy)/r.height*700;
+      state.positions[state.drag.n.id]={x:Math.max(20,Math.min(1180,state.drag.sx+dx)),y:Math.max(20,Math.min(680,state.drag.sy+dy))};
+      queueGraphRender();
+    });
     window.addEventListener('mouseup',()=>state.drag=null);
-    $('graphSvg')?.addEventListener('wheel',e=>{e.preventDefault();const z=Math.max(.6,Math.min(2.2,Number($('graphSvg').dataset.zoom||1)*(e.deltaY>0?.9:1.1)));$('graphSvg').dataset.zoom=z;$('graphSvg').style.transform='scale('+z+')';},{passive:false});
     $('graphSvg')?.addEventListener('click',()=>{state.selected=null;renderGraph();});
-    window.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();switchTab('search');$('query')?.focus();}if(e.key==='Escape'){state.selected=null;renderGraph();}});
+    window.addEventListener('keydown',e=>{
+      if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();switchTab('search');$('query')?.focus();}
+      if(e.key==='Escape'){state.selected=null;renderGraph();}
+    });
     window.addEventListener('error',e=>showError('JavaScript error',e.message||'Unknown error'));
     window.addEventListener('unhandledrejection',e=>showError('Promise error',e.reason?.message||String(e.reason||'Unknown rejection')));
-    refresh(); setInterval(refresh,1200);
+    refresh();setInterval(refresh,1200);
   }
 
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
