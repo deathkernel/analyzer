@@ -186,5 +186,12 @@ def import_tokens(text,p):
     pats={'.py':[r'^\s*from\s+([\w.]+)\s+import',r'^\s*import\s+([\w.]+)'],'.js':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.jsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.ts':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.tsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.java':[r'^\s*import\s+([\w.]+)'],'.kt':[r'^\s*import\s+([\w.]+)'],'.c':[r'#include\s*[<"]([^>"]+)'],'.h':[r'#include\s*[<"]([^>"]+)'],'.cpp':[r'#include\s*[<"]([^>"]+)'],'.hpp':[r'#include\s*[<"]([^>"]+)'],'.go':[r'"([\w./-]+)"'],'.rs':[r'\b(?:mod|use)\s+([\w:]+)'],'.rb':[r'require\s+["\'](.+?)["\']'],'.php':[r'(?:require|include)(?:_once)?\s*\(?\s*["\'](.+?)["\']']}
     out=[]
     for pat in pats.get(p.suffix.lower(),[]):
-        out.extend(re.findall(pat,text,re.M))
+        matches=re.findall(pat,text,re.M)
+        for match in matches:
+            if p.suffix.lower()=='.py' and isinstance(match,tuple):
+                base,item=match
+                out.append(f"{base}.{item}")
+                out.append(base)
+            else:
+                out.append(match)
     return list(dict.fromkeys(out))
