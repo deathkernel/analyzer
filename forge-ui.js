@@ -145,7 +145,8 @@
     text('hudNodes',String(nodes.length).padStart(2,'0'));
     text('hudEdges',String(realEdges.length).padStart(2,'0'));
     text('hudDepth',String(layerCount).padStart(2,'0'));
-    text('hudMode','FULL NETWORK');
+    text('hudMode',state.focused?'FOCUS':'FULL NETWORK');
+    text('hudBlast',String(state.data.intelligence?.impact?.blast_radius||0).padStart(2,'0'));
 
     const defs='<defs>'+
       '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d8fbff"/></marker>'+
@@ -233,6 +234,35 @@
   function toggleFX(){state.fx=!state.fx;text('fxBtn','FX '+(state.fx?'ON':'OFF'));renderGraph();}
   function toggleMinimap(){state.minimap=!state.minimap;text('miniBtn','MINIMAP '+(state.minimap?'ON':'OFF'));showError('MINIMAP',state.minimap?'Telemetry overlay enabled.':'Telemetry overlay disabled.');setTimeout(()=>{$('forgeError')?.remove();},1100);}
 
+  function intelPanel(title, body){
+    const el=$('graphIntel');if(!el)return;
+    el.innerHTML='<header><b>'+esc(title)+'</b><button id="intelClose">×</button></header><div class="intelBody">'+body+'</div>';
+    el.classList.add('open');
+    $('intelClose')?.addEventListener('click',()=>el.classList.remove('open'));
+  }
+  function showImpact(){
+    if(!state.focused){intelPanel('IMPACT ANALYSIS','<p>Select a node first.</p>');return;}
+    const x=state.data.intelligence?.impact||{}, up=x.upstream||[], down=x.downstream||[];
+    const li=a=>a.length?a.map(v=>'<li>'+esc(v)+'</li>').join(''):'<li>NONE</li>';
+    intelPanel('IMPACT // '+esc(x.focused||'FILE'),
+      '<div class="intelMetric"><b>'+esc(x.blast_radius||0)+'</b><span>BLAST RADIUS</span></div>'+
+      '<section><small>UPSTREAM</small><ul>'+li(up)+'</ul></section>'+
+      '<section><small>DOWNSTREAM</small><ul>'+li(down)+'</ul></section>');
+  }
+  function showXray(){
+    const x=state.data.intelligence?.xray||{};
+    const roles=Object.entries(x.roles||{}).map(([k,v])=>'<span><b>'+esc(k)+'</b> '+esc(v)+'</span>').join('');
+    const flows=(x.flows||[]).slice(0,8).map(p=>'<li>'+p.map(esc).join(' → ')+'</li>').join('')||'<li>NO ENTRY-TO-DATA FLOW</li>';
+    intelPanel('PROJECT X-RAY','<div class="intelTags">'+roles+'</div><section><small>ENTRYPOINTS</small><ul>'+((x.entrypoints||[]).map(v=>'<li>'+esc(v)+'</li>').join('')||'<li>NONE</li>')+'</ul></section><section><small>FLOWS</small><ul>'+flows+'</ul></section>');
+  }
+  function showCycles(){
+    const a=state.data.intelligence?.cycles||[];
+    intelPanel('CIRCULAR DEPENDENCIES',a.length?'<div class="intelAlert">'+a.length+' CYCLE(S) DETECTED</div>'+a.map((p,i)=>'<section><small>CYCLE '+(i+1)+'</small><div>'+p.map(esc).join(' → ')+' → '+esc(p[0])+'</div></section>').join(''):'<div class="intelOk">✓ NO CIRCULAR DEPENDENCIES</div>');
+  }
+  function showDeadCode(){
+    const a=state.data.intelligence?.dead_code||[];
+    intelPanel('DEAD CODE RADAR',a.length?'<div class="intelAlert">'+a.length+' CANDIDATES</div><ul>'+a.map(x=>'<li><b>'+esc(x.symbol||x.path||'UNKNOWN')+'</b><br><small>'+esc(x.path||'')+(x.line?' : '+x.line:'')+'</small><br>'+esc(x.reason||'')+'</li>').join('')+'</ul>':'<div class="intelOk">✓ NO DEAD-CODE CANDIDATES</div>');
+  }
   async function refresh(){
     try{
       const d=await api('/api/state'); state.data=d;
@@ -254,7 +284,12 @@
     $('query')?.addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
     $('results')?.addEventListener('click',e=>{const el=e.target.closest('[data-search-file]');if(el)openFile(decodeURIComponent(el.dataset.searchFile));});
     document.querySelectorAll('.graph-controls [data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;document.querySelectorAll('.graph-controls [data-mode]').forEach(x=>x.classList.toggle('active',x===b));renderGraph();}));
-    $('hotBtn')?.addEventListener('click',focusHot); $('centerBtn')?.addEventListener('click',centerGraph); $('fxBtn')?.addEventListener('click',toggleFX); $('miniBtn')?.addEventListener('click',toggleMinimap);
+    $('hotBtn')?.addEventListener('click',focusHot);
+    $('impactBtn')?.addEventListener('click',showImpact);
+    $('xrayBtn')?.addEventListener('click',showXray);
+    $('cyclesBtn')?.addEventListener('click',showCycles);
+    $('deadBtn')?.addEventListener('click',showDeadCode);
+    $('centerBtn')?.addEventListener('click',centerGraph); $('fxBtn')?.addEventListener('click',toggleFX); $('miniBtn')?.addEventListener('click',toggleMinimap);
     $('graphSvg')?.addEventListener('mousemove',e=>{
       if(!state.drag)return;
       const r=$('graphbox').getBoundingClientRect();
