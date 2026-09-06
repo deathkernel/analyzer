@@ -129,18 +129,31 @@
     const allEdges=(graph.edges||[]).filter(e=>e.kind!=='contains');
 
     // FILE NETWORK FOCUS:
-    // Show the selected file plus every directly connected file.
-    // Unrelated project nodes stay hidden.
+    // Focus on the selected file and recursively traverse every real
+    // dependency path until each reachable branch ends. No artificial links.
     let nodes=allNodes;
     if(state.focused){
-      const keep=new Set([state.focused]);
+      const adjacency=new Map();
+      allNodes.forEach(n=>adjacency.set(n.id,{in:new Set(),out:new Set()}));
       allEdges.forEach(e=>{
-        if(e.source===state.focused)keep.add(e.target);
-        if(e.target===state.focused)keep.add(e.source);
+        if(adjacency.has(e.source)&&adjacency.has(e.target)){
+          adjacency.get(e.source).out.add(e.target);
+          adjacency.get(e.target).in.add(e.source);
+        }
       });
+
+      const keep=new Set([state.focused]);
+      const queue=[state.focused];
+      while(queue.length){
+        const id=queue.shift();
+        const links=adjacency.get(id);
+        if(!links)continue;
+        for(const next of [...links.in,...links.out]){
+          if(!keep.has(next)){keep.add(next);queue.push(next);}
+        }
+      }
       nodes=allNodes.filter(n=>keep.has(n.id));
     }
-
     // Neural-network presentation.
     // Focus mode keeps the selected file as the core and renders its full
     // one-hop network with explicit source -> core -> destination flow.
@@ -152,30 +165,82 @@
 
     if(state.focused){
       const focus=state.focused;
-      const incomingIds=new Set(realEdges.filter(e=>e.target===focus).map(e=>e.source));
-      const outgoingIds=new Set(realEdges.filter(e=>e.source===focus).map(e=>e.target));
-      const sourceNodes=nodes.filter(n=>incomingIds.has(n.id)&&n.id!==focus)
-        .sort((a,b)=>(Number(b.degree)||0)-(Number(a.degree)||0));
-      const destNodes=nodes.filter(n=>outgoingIds.has(n.id)&&n.id!==focus)
-        .sort((a,b)=>(Number(b.degree)||0)-(Number(a.degree)||0));
-
-      byLayer.set(0,sourceNodes);
-      byLayer.set(1,[by[focus]]);
-      byLayer.set(2,destNodes);
-      layerCount=3;
-
-      const xs=[155,600,1045],top=55,bottom=645;
-      [sourceNodes,[by[focus]],destNodes].forEach((arr,idx)=>{
-        const gap=(bottom-top)/Math.max(1,arr.length-1);
-        arr.forEach((n,i)=>{state.positions[n.id]={x:xs[idx],y:arr.length===1?350:top+i*gap};});
+      const visibleSet=new Set(nodes.map(n=>n.id));
+      const incoming=new Map(),outgoing=new Map();
+      nodes.forEach(n=>{incoming.set(n.id,[]);outgoing.set(n.id,[]);});
+      realEdges.forEach(e=>{
+        if(!visibleSet.has(e.source)||!visibleSet.has(e.target))return;
+        outgoing.get(e.source).push(e.target);
+        incoming.get(e.target).push(e.source);
       });
 
+      // Calculate minimum directed distance from the selected file in both
+      // directions. Every reachable step gets its own visual layer.
+      const inDist=new Map([[focus,0]]);
+      const outDist=new Map([[focus,0]]);
+      let q=[focus];
+      while(q.length){
+        const id=q.shift();
+        for(const next of incoming.get(id)||[]){
+          if(!inDist.has(next)){inDist.set(next,inDist.get(id)+1);q.push(next);}
+        }
+      }
+      q=[focus];
+      while(q.length){
+        const id=q.shift();
+        for(const next of outgoing.get(id)||[]){
+          if(!outDist.has(next)){outDist.set(next,outDist.get(id)+1);q.push(next);}
+        }
+      }
+
+      const leftGroups=new Map(),rightGroups=new Map();
+      nodes.forEach(n=>{
+        if(n.id===focus)return;
+        if(inDist.has(n.id) && (!outDist.has(n.id) || inDist.get(n.id)<=outDist.get(n.id))){
+          const d=inDist.get(n.id);
+          if(!leftGroups.has(d))leftGroups.set(d,[]);
+          leftGroups.get(d).push(n);
+        }else if(outDist.has(n.id)){
+          const d=outDist.get(n.id);
+          if(!rightGroups.has(d))rightGroups.set(d,[]);
+          rightGroups.get(d).push(n);
+        }
+      });
+
+      // Multi-step layers: farther inbound nodes move farther left; farther
+      // outbound nodes move farther right. Bidirectional nodes stay on the
+      // nearer side so they remain connected without duplication.
+      const leftDistances=[...leftGroups.keys()].sort((a,b)=>b-a);
+      const rightDistances=[...rightGroups.keys()].sort((a,b)=>a-b);
+      const columns=[];
+      leftDistances.forEach(d=>columns.push({side:'in',distance:d,nodes:leftGroups.get(d)}));
+      columns.push({side:'focus',distance:0,nodes:[by[focus]]});
+      rightDistances.forEach(d=>columns.push({side:'out',distance:d,nodes:rightGroups.get(d)}));
+
+      // Limit only geometric width, never graph connectivity.
+      const leftX=70,rightX=1130,focusX=600;
+      const leftCount=leftDistances.length,rightCount=rightDistances.length;
+      columns.forEach((col,idx)=>{
+        let x=focusX;
+        if(col.side==='in')x=leftX + ((leftDistances.length-1-idx)/Math.max(1,leftDistances.length))*(focusX-leftX);
+        if(col.side==='out'){
+          const outIndex=rightDistances.indexOf(col.distance);
+          x=focusX + ((outIndex+1)/Math.max(1,rightDistances.length))*(rightX-focusX);
+        }
+        const arr=col.nodes.sort((a,b)=>String(a.label||'').localeCompare(String(b.label||'')));
+        const top=45,bottom=655,gap=(bottom-top)/Math.max(1,arr.length-1);
+        arr.forEach((n,i)=>{state.positions[n.id]={x,y:arr.length===1?350:top+i*gap};});
+      });
+
+      layerCount=columns.length;
       const incomingCount=realEdges.filter(e=>e.target===focus).length;
       const outgoingCount=realEdges.filter(e=>e.source===focus).length;
-      text('graphInfo','FILE NETWORK // '+incomingCount+' INBOUND / '+outgoingCount+' OUTBOUND');
-      text('hudDepth','03');
-      text('hudBlast',String(incomingCount+outgoingCount).padStart(2,'0'));
-    } else {
+      const maxIn=Math.max(0,...[...inDist.values()]);
+      const maxOut=Math.max(0,...[...outDist.values()]);
+      text('graphInfo','FULL FILE NETWORK // '+nodes.length+' NODES // '+realEdges.length+' LINKS');
+      text('hudDepth',String(Math.max(maxIn,maxOut)).padStart(2,'0'));
+      text('hudBlast',String(Math.max(0,nodes.length-1)).padStart(2,'0'));
+    }    } else {
       const rawRanks=nodes.map(n=>Math.max(0,Number(n.rank)||0));
       const rawMax=Math.max(0,...rawRanks);
       layerCount=Math.min(6,Math.max(2,new Set(rawRanks).size));
