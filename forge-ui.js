@@ -272,7 +272,12 @@
     });
     window.addEventListener('keydown',e=>{
       if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();switchTab('search');$('query')?.focus();}
-      if(e.key==='Escape'){state.selected=null;renderGraph();}
+      if(e.key==='Escape'){
+        state.selected=null;
+        state.focused=null;
+        state.positions={};
+        renderGraph();
+      }
     });
     window.addEventListener('error',e=>showError('JavaScript error',e.message||'Unknown error'));
     window.addEventListener('unhandledrejection',e=>showError('Promise error',e.reason?.message||String(e.reason||'Unknown rejection')));
