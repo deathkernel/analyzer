@@ -37,4 +37,4 @@ def test_graph_prefers_exact_module_path():
 
 def test_import_tokens_are_stable():
     tokens=import_tokens("import os\nfrom pkg import alpha\n",Path("main.py"))
-    assert tokens==["os","pkg"]
+    assert tokens==["os","pkg.alpha","pkg"]
