@@ -17,6 +17,7 @@ from urllib.parse import parse_qs,unquote,urlparse
 
 from scanner import source_files,read_text,rel,analyze
 from graph_engine import build_graph,graph_metrics,intelligence_report
+from exception_engine import analyze_exceptions
 
 HOST="127.0.0.1"
 DEFAULT_PORT=8765
@@ -49,7 +50,8 @@ class Forge:
                     "stats":{"files":0,"lines":0,"functions":0,"classes":0,"imports":0,"bytes":0},
                     "languages":{},"issues":[],"shortages":[],"bugs":[],"summary":{"total":0,"critical":0,"high":0,"medium":0,"low":0},
                     "dna":{"complexity":100,"coupling":100,"duplication":100,"security":100,"maintainability":100,"architecture":"EMPTY"},
-                    "security":[],"graph":{"nodes":[],"edges":[],"metrics":{}},"intelligence":{"cycles":[],"cycle_count":0,"impact":{"focused":None,"upstream":[],"downstream":[],"blast_radius":0},"xray":{"roles":{},"entrypoints":[],"data_nodes":0,"flows":[]},"dead_code":[]},"files":[],
+                    "security":[],"exception_safety":{"score":100,"handlers":0,"risky_findings":0,"metrics":{},"recovery":{"logged":0,"reraised":0,"swallowed":0},"analysis_errors":[]},
+                    "graph":{"nodes":[],"edges":[],"metrics":{}},"intelligence":{"cycles":[],"cycle_count":0,"impact":{"focused":None,"upstream":[],"downstream":[],"blast_radius":0},"xray":{"roles":{},"entrypoints":[],"data_nodes":0,"flows":[]},"dead_code":[]},"files":[],
                     "tests":{"files":[],"coverage_proxy":0,"count":0},"history":[],"activity":[],"error":None}
         self.history=[];self.activity=[];self.snapshot={};self.live=True
 
@@ -75,25 +77,31 @@ class Forge:
             result=analyze(self.project);files_abs=[self.project/x["path"] for x in result["files"]]
             contents={f:read_text(f) for f in files_abs};nodes,edges=build_graph(self.project,files_abs,contents);gm=graph_metrics(nodes,edges)
             intel=intelligence_report(nodes,edges,contents)
-            issues=result["issues"];sev=Counter(result["severity"]);self.scan_id+=1;tests=result["tests"]
+            exception_report=analyze_exceptions(files_abs,contents,self.project)
+            issues=list(result["issues"])+list(exception_report["findings"])
+            sev=Counter(x["severity"] for x in issues);self.scan_id+=1;tests=result["tests"]
+            base_health=result["health"]
+            exception_health=exception_report["score"]
+            health=max(0,min(base_health,round((base_health*0.8)+(exception_health*0.2))))
             test_ratio=round(100*len(tests)/max(1,len(result["files"])),1)
-            history_item={"scan":self.scan_id,"time":stamp(),"health":result["health"],"issues":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0)}
+            history_item={"scan":self.scan_id,"time":stamp(),"health":health,"issues":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0)}
             with self.lock:
                 self.history.append(history_item);self.history=self.history[-80:]
                 self.state.update({
                     "project":str(self.project),"watching":self.live,"scan":self.scan_id,
-                    "duration_ms":round((time.perf_counter()-started)*1000,1),"health":result["health"],
+                    "duration_ms":round((time.perf_counter()-started)*1000,1),"health":health,
                     "stats":{"files":len(result["files"]),"lines":result["metrics"].get("lines",0),"functions":result["metrics"].get("functions",0),
                              "classes":result["metrics"].get("classes",0),"imports":result["metrics"].get("imports",0),"bytes":result["metrics"].get("bytes",0)},
                     "languages":result["languages"],"issues":issues,"shortages":issues[:30],"bugs":issues,
                     "summary":{"total":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0),"medium":sev.get("MEDIUM",0),"low":sev.get("LOW",0)},
                     "dna":result["dna"],
                     "security":[x for x in issues if x["type"] in {"SECRET","DANGEROUS_EXEC","COMMAND_EXEC","SQL_INJECTION","DOM_XSS","UNSAFE_DESERIALIZE","PASSWORD_LITERAL"}],
+                    "exception_safety":exception_report,
                     "graph":{"nodes":nodes,"edges":edges,"metrics":gm},"intelligence":intel,"files":result["files"],
                     "tests":{"files":tests,"coverage_proxy":test_ratio,"count":len(tests)},
                     "history":list(self.history),"activity":list(self.activity),"error":None,
                 })
-            self.snapshot=self.snap();self.emit(f'SCAN #{self.scan_id:03d} // {len(result["files"])} files // health {result["health"]}')
+            self.snapshot=self.snap();self.emit(f'SCAN #{self.scan_id:03d} // {len(result["files"])} files // health {health} // exception safety {exception_health}')
         except Exception as exc:
             error=f"{type(exc).__name__}: {exc}";traceback.print_exc()
             with self.lock:
@@ -162,24 +170,15 @@ def github_project(url):
     target=base/"repository"
     print(f"FORGE // cloning {url}")
     try:
-        subprocess.run(
-            ["git","clone","--depth","1","--no-tags",url,str(target)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
+        subprocess.run(["git","clone","--depth","1","--no-tags",url,str(target)],check=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     except FileNotFoundError:
-        shutil.rmtree(base,ignore_errors=True)
-        raise RuntimeError("Git is not installed or not available on PATH.")
+        shutil.rmtree(base,ignore_errors=True);raise RuntimeError("Git is not installed or not available on PATH.")
     except subprocess.CalledProcessError as exc:
-        output=(exc.stdout or "").strip()
-        shutil.rmtree(base,ignore_errors=True)
+        output=(exc.stdout or "").strip();shutil.rmtree(base,ignore_errors=True)
         raise RuntimeError("GitHub clone failed"+(": "+output[-500:] if output else "."))
     return target,base
 
 def choose_project():
-
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -194,18 +193,11 @@ def choose_project():
 def main():
     global FORGE
     temp_workspace=None
-
-    # Optional remote mode: python app.py --github <repo-url>
     if len(sys.argv)>=3 and sys.argv[1].lower()=="--github":
-        try:
-            project,temp_workspace=github_project(sys.argv[2])
-        except Exception as exc:
-            raise SystemExit(f"FORGE // {exc}")
-    else:
-        project=choose_project()
-
-    if not project.exists() or not project.is_dir():
-        raise SystemExit(f"Invalid project folder: {project}")
+        try:project,temp_workspace=github_project(sys.argv[2])
+        except Exception as exc:raise SystemExit(f"FORGE // {exc}")
+    else:project=choose_project()
+    if not project.exists() or not project.is_dir():raise SystemExit(f"Invalid project folder: {project}")
     port=pick_port();FORGE=Forge(project)
     threading.Thread(target=FORGE.watch,daemon=True,name="forge-watcher").start()
     server=ThreadingHTTPServer((HOST,port),Handler);url=f"http://{HOST}:{port}"
@@ -215,9 +207,7 @@ def main():
     try:server.serve_forever()
     except KeyboardInterrupt:print("\nFORGE // shutting down")
     finally:
-        FORGE.live=False
-        server.server_close()
-        if temp_workspace:
-            shutil.rmtree(temp_workspace,ignore_errors=True)
+        FORGE.live=False;server.server_close()
+        if temp_workspace:shutil.rmtree(temp_workspace,ignore_errors=True)
 
 if __name__=="__main__":main()
