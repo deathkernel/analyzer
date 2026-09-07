@@ -15,43 +15,47 @@ def resolve_import(token, src, root, by_stem, by_name):
         candidates.extend(Path(str(base)+ext) for ext in EXT_CANDIDATES)
         candidates += [base/'__init__.py',base/'index.js',base/'index.ts',base/'index.tsx']
     else:
-        normalized=clean.lstrip('./')
-        candidates += [by_name.get(normalized),by_name.get(normalized.lstrip('/'))]
+        normalized=clean.lstrip('./').lower()
         module_path=normalized.replace('.','/')
-        candidates += [by_name.get(module_path),by_name.get(module_path+'/__init__.py')]
+        # Exact module identity always wins: pkg.alpha -> pkg/alpha.py.
+        for key in (normalized, module_path):
+            value=by_name.get(key)
+            if isinstance(value,list): candidates.extend(value)
+            elif value: candidates.append(value)
+            for suffix in ('.py','.js','.jsx','.ts','.tsx','.java','.kt','.go','.rs'):
+                value=by_name.get(key+suffix)
+                if isinstance(value,list): candidates.extend(value)
+                elif value: candidates.append(value)
+            value=by_name.get(key+'/__init__.py')
+            if isinstance(value,list): candidates.extend(value)
+            elif value: candidates.append(value)
+        # Basename fallback is allowed only when unambiguous.
         last=normalized.split('/')[-1].split('.')[-1]
-        candidates += list(by_stem.get(last,[]))
+        matches=by_stem.get(last,[])
+        if len(matches)==1: candidates.append(matches[0])
     seen=set()
     for c in candidates:
         if not c or c in seen: continue
         seen.add(c)
         try:
             if c.exists() and root in c.parents: return c
-        except OSError:
-            continue
+        except OSError: continue
     return None
 
 def _path_node(root,path,kind='file'):
     return '@file:'+rel(root,path) if kind=='file' else '@folder:'+path
 
 def _semantic_edges(root,fs,contents,nodes,seen):
-    edges=[]
-    by_rel={rel(root,f).lower():f for f in fs}
-    by_name=defaultdict(list)
-    for f in fs:
-        by_name[f.name.lower()].append(f)
-        by_name[rel(root,f).lower()].append(f)
+    edges=[];by_rel={rel(root,f).lower():f for f in fs};by_name=defaultdict(list)
+    for f in fs:by_name[f.name.lower()].append(f);by_name[rel(root,f).lower()].append(f)
     template_files={p:f for p,f in by_rel.items() if '/templates/' in '/'+p or p.startswith('templates/')}
     asset_files={p:f for p,f in by_rel.items() if '/static/' in '/'+p or p.startswith('static/')}
     db_files={p:f for p,f in by_rel.items() if any(x in p for x in ('database/','db/','models/','schema.sql'))}
-
     def add(source,target,relation,confidence='inferred'):
         if source==target or source not in nodes or target not in nodes:return
         key=(source,target,relation)
         if key in seen:return
-        seen.add(key)
-        edges.append({'source':source,'target':target,'kind':'neural','relation':relation,'confidence':confidence})
-
+        seen.add(key);edges.append({'source':source,'target':target,'kind':'neural','relation':relation,'confidence':confidence})
     for f in fs:
         rp=rel(root,f).replace('\\','/').lower();nid=_path_node(root,f);text=contents.get(f,'')
         if rp.endswith('.py'):
@@ -59,12 +63,11 @@ def _semantic_edges(root,fs,contents,nodes,seen):
             for name in re.findall(r"render_template\(\s*['\"]([^'\"]+)",text):
                 candidate=template_files.get(('templates/'+name).lower())
                 if not candidate and by_name.get(Path(name).name.lower()):
-                    candidate=by_name[Path(name).name.lower()][0]
+                    matches=by_name[Path(name).name.lower()];candidate=matches[0] if len(matches)==1 else None
                 if candidate:add(nid,_path_node(root,candidate),'renders')
             if any(x in text for x in ('Blueprint(','blueprint','@app.','route(')):
                 for dbp,dbf in db_files.items():
-                    if dbp.endswith(('.py','.sql')) and any(t in rp for t in ('route','app.py','controller','api')):
-                        add(nid,_path_node(root,dbf),'data-access')
+                    if dbp.endswith(('.py','.sql')) and any(t in rp for t in ('route','app.py','controller','api')):add(nid,_path_node(root,dbf),'data-access')
             if f.name.lower() in ('app.py','main.py','server.py','index.py'):
                 for other in fs:
                     op=rel(root,other).replace('\\','/').lower()
@@ -75,14 +78,13 @@ def _semantic_edges(root,fs,contents,nodes,seen):
         if f.suffix.lower() in ('.html','.htm','.jinja','.jinja2'):
             import re
             for ref in re.findall(r'''(?:href|src)\s*=\s*["']([^"']+)["']''',text,flags=re.I):
-                ref=ref.split('?')[0].split('#')[0].lstrip('./').lower()
-                candidate=asset_files.get(ref) or asset_files.get('static/'+ref) or asset_files.get(ref.lstrip('/'))
+                ref=ref.split('?')[0].split('#')[0].lstrip('./').lower();candidate=asset_files.get(ref) or asset_files.get('static/'+ref) or asset_files.get(ref.lstrip('/'))
                 if candidate:add(nid,_path_node(root,candidate),'loads')
             for name in re.findall(r'''\{%\s*(?:extends|include)\s+["']([^"']+)["']''',text,flags=re.I):
                 candidate=template_files.get(('templates/'+name).lower())
-                if not candidate and by_name.get(Path(name).name.lower()):candidate=by_name[Path(name).name.lower()][0]
+                if not candidate and by_name.get(Path(name).name.lower()):
+                    matches=by_name[Path(name).name.lower()];candidate=matches[0] if len(matches)==1 else None
                 if candidate:add(nid,_path_node(root,candidate),'composes')
-
     for n in nodes.values():
         p=str(n.get('path','')).replace('\\','/').lower()
         if n.get('kind')=='folder':n['role']='container'
@@ -95,18 +97,14 @@ def _semantic_edges(root,fs,contents,nodes,seen):
     return edges
 
 def _layered_positions(nodes,edges):
-    useful={n['id'] for n in nodes};directed=[e for e in edges if e['kind'] in ('import','neural') and e['source'] in useful and e['target'] in useful]
-    out=defaultdict(list);indeg=Counter()
+    useful={n['id'] for n in nodes};directed=[e for e in edges if e['kind'] in ('import','neural') and e['source'] in useful and e['target'] in useful];out=defaultdict(list);indeg=Counter()
     for e in directed:out[e['source']].append(e['target']);indeg[e['target']]+=1
     q=deque(sorted([n for n in useful if indeg[n]==0]));rank={n:0 for n in q};remaining=set(useful)
     while q:
         n=q.popleft();remaining.discard(n)
-        for m in sorted(set(out[n])):
-            rank[m]=max(rank.get(m,0),rank[n]+1);indeg[m]-=1
-            if indeg[m]==0:q.append(m)
+        for m in sorted(set(out[n])):rank[m]=max(rank.get(m,0),rank[n]+1);indeg[m]-=1; q.append(m) if indeg[m]==0 else None
     for n in sorted(remaining):
-        neigh=[rank.get(x,0) for x in out[n]]+[rank.get(e['source'],0) for e in directed if e['target']==n]
-        rank[n]=(min(neigh)+1) if neigh else 0
+        neigh=[rank.get(x,0) for x in out[n]]+[rank.get(e['source'],0) for e in directed if e['target']==n];rank[n]=(min(neigh)+1) if neigh else 0
     buckets=defaultdict(list)
     for n in sorted(useful):buckets[rank[n]].append(n)
     order={r:list(v) for r,v in buckets.items()}
@@ -130,19 +128,18 @@ def build_graph(root,fs,contents):
     nodes,edges,seen={},[],set();folders={'.'}
     for f in fs:
         rp=rel(root,f);cur=''
-        for part in rp.split('/')[:-1]:
-            cur=f'{cur}/{part}'.strip('/');folders.add(cur)
+        for part in rp.split('/')[:-1]:cur=f'{cur}/{part}'.strip('/');folders.add(cur)
     for folder in sorted(folders,key=lambda x:(x.count('/'),x)):
         nid='@folder:'+folder;nodes[nid]={'id':nid,'label':'PROJECT' if folder=='.' else folder.split('/')[-1],'language':'FOLDER','kind':'folder','path':folder}
         if folder!='.':
             parent='/'.join(folder.split('/')[:-1]) or '.';e=('@folder:'+parent,nid)
             if e not in seen:seen.add(e);edges.append({'source':e[0],'target':e[1],'kind':'contains'})
-    by_stem=defaultdict(list);by_name={}
+    by_stem=defaultdict(list);by_name=defaultdict(list)
     for f in fs:
-        by_stem[f.stem.lower()].append(f);by_name[rel(root,f).lower()]=f;by_name[f.name.lower()]=f
+        rp=rel(root,f).lower();by_stem[f.stem.lower()].append(f);by_name[rp].append(f)
+        by_name[f.name.lower()].append(f)
     for f in fs:
-        rp=rel(root,f);nid='@file:'+rp;folder='/'.join(rp.split('/')[:-1]) or '.'
-        nodes[nid]={'id':nid,'label':f.name,'language':f.suffix.lower(),'kind':'file','path':rp,'lines':len(contents[f].splitlines())}
+        rp=rel(root,f);nid='@file:'+rp;folder='/'.join(rp.split('/')[:-1]) or '.';nodes[nid]={'id':nid,'label':f.name,'language':f.suffix.lower(),'kind':'file','path':rp,'lines':len(contents[f].splitlines())}
         e=('@folder:'+folder,nid)
         if e not in seen:seen.add(e);edges.append({'source':e[0],'target':e[1],'kind':'contains'})
         for token in import_tokens(contents[f],f):
@@ -155,20 +152,16 @@ def build_graph(root,fs,contents):
     return list(nodes.values()),edges
 
 def _cycle_components(nodes,edges):
-    ids={n['id'] for n in nodes}
-    adj=defaultdict(list)
+    ids={n['id'] for n in nodes};adj=defaultdict(list)
     for e in edges:
-        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:
-            adj[e['source']].append(e['target'])
+        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:adj[e['source']].append(e['target'])
     index=0;stack=[];onstack=set();indices={};low={};components=[]
     def visit(v):
         nonlocal index
         indices[v]=index;low[v]=index;index+=1;stack.append(v);onstack.add(v)
         for w in adj[v]:
-            if w not in indices:
-                visit(w);low[v]=min(low[v],low[w])
-            elif w in onstack:
-                low[v]=min(low[v],indices[w])
+            if w not in indices:visit(w);low[v]=min(low[v],low[w])
+            elif w in onstack:low[v]=min(low[v],indices[w])
         if low[v]==indices[v]:
             comp=[]
             while True:
@@ -184,8 +177,7 @@ def _impact(nodes,edges,focus_id=None):
     if not focus_id:return {'focused':None,'upstream':[],'downstream':[],'blast_radius':0}
     incoming=defaultdict(list);outgoing=defaultdict(list)
     for e in edges:
-        if e['kind'] in ('import','neural'):
-            outgoing[e['source']].append(e['target']);incoming[e['target']].append(e['source'])
+        if e['kind'] in ('import','neural'):outgoing[e['source']].append(e['target']);incoming[e['target']].append(e['source'])
     def walk(start,adj):
         seen=set();q=deque([start])
         while q:
@@ -193,25 +185,19 @@ def _impact(nodes,edges,focus_id=None):
             for y in adj.get(x,[]):
                 if y not in seen and y!=start:seen.add(y);q.append(y)
         return seen
-    up=walk(focus_id,incoming);down=walk(focus_id,outgoing)
-    labels={n['id']:n.get('path',n.get('label')) for n in nodes}
+    up=walk(focus_id,incoming);down=walk(focus_id,outgoing);labels={n['id']:n.get('path',n.get('label')) for n in nodes}
     return {'focused':labels.get(focus_id,focus_id),'upstream':sorted(labels[x] for x in up),'downstream':sorted(labels[x] for x in down),'blast_radius':len(up|down)}
 
 def _xray(nodes,edges):
-    roles=Counter(n.get('role','module') for n in nodes)
-    ids={n['id'] for n in nodes}
-    adjacency=defaultdict(list)
+    roles=Counter(n.get('role','module') for n in nodes);ids={n['id'] for n in nodes};adjacency=defaultdict(list)
     for e in edges:
         if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:adjacency[e['source']].append(e['target'])
-    entry=[n for n in nodes if n.get('role')=='entrypoint']
-    data={n['id'] for n in nodes if n.get('role')=='data'}
-    paths=[]
+    entry=[n for n in nodes if n.get('role')=='entrypoint'];data={n['id'] for n in nodes if n.get('role')=='data'};paths=[]
     for e in entry:
         q=deque([(e['id'],[e.get('path',e['label'])])]);seen={e['id']}
         while q:
             cur,path=q.popleft()
-            if cur in data:
-                paths.append(path);continue
+            if cur in data:paths.append(path);continue
             for nb in adjacency[cur]:
                 if nb not in seen:
                     seen.add(nb);node=next((x for x in nodes if x['id']==nb),None)
@@ -219,24 +205,17 @@ def _xray(nodes,edges):
     return {'roles':dict(roles),'entrypoints':[n.get('path',n.get('label')) for n in entry],'data_nodes':len(data),'flows':paths[:30]}
 
 def _dead_code(nodes,edges,contents=None):
-    contents=contents or {}
-    incoming=Counter(e['target'] for e in edges if e['kind'] in ('import','neural'))
-    candidates=[]
+    contents=contents or {};incoming=Counter(e['target'] for e in edges if e['kind'] in ('import','neural'));candidates=[]
     for n in nodes:
-        if n.get('kind')!='file':continue
-        if incoming[n['id']]==0 and n.get('role')!='entrypoint':
-            candidates.append({'path':n.get('path'),'reason':'No inbound dependency edge'})
+        if n.get('kind')=='file' and incoming[n['id']]==0 and n.get('role')!='entrypoint':candidates.append({'path':n.get('path'),'reason':'No inbound dependency edge'})
     if contents:
         for f,text in contents.items():
             if str(getattr(f,'suffix','')).lower()=='.py':
-                try:
-                    tree=ast.parse(text)
-                except Exception:
-                    continue
+                try:tree=ast.parse(text)
+                except Exception:continue
                 refs=Counter(x.id for x in ast.walk(tree) if isinstance(x,ast.Name) and isinstance(x.ctx,ast.Load))
                 for node in ast.walk(tree):
-                    if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)) and node.name not in refs and not node.name.startswith('_'):
-                        candidates.append({'path':str(f),'line':node.lineno,'symbol':node.name,'reason':'Defined but never referenced in module'})
+                    if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)) and node.name not in refs and not node.name.startswith('_'):candidates.append({'path':str(f),'line':node.lineno,'symbol':node.name,'reason':'Defined but never referenced in module'})
     unique=[];seen=set()
     for x in candidates:
         k=(x.get('path'),x.get('line'),x.get('symbol'),x.get('reason'))
@@ -245,13 +224,7 @@ def _dead_code(nodes,edges,contents=None):
 
 def intelligence_report(nodes,edges,contents=None,focus_id=None):
     cycles=_cycle_components(nodes,edges)
-    return {
-        'cycles':[ [next((n.get('path',n.get('label')) for n in nodes if n['id']==i),i) for i in comp] for comp in cycles ],
-        'cycle_count':len(cycles),
-        'impact':_impact(nodes,edges,focus_id),
-        'xray':_xray(nodes,edges),
-        'dead_code':_dead_code(nodes,edges,contents)
-    }
+    return {'cycles':[[next((n.get('path',n.get('label')) for n in nodes if n['id']==i),i) for i in comp] for comp in cycles],'cycle_count':len(cycles),'impact':_impact(nodes,edges,focus_id),'xray':_xray(nodes,edges),'dead_code':_dead_code(nodes,edges,contents)}
 
 def graph_metrics(nodes,edges):
     deg=Counter();imports=neural=contains=0
@@ -260,4 +233,4 @@ def graph_metrics(nodes,edges):
         imports+=e['kind']=='import';neural+=e['kind']=='neural';contains+=e['kind']=='contains'
     for n in nodes:n['degree']=deg[n['id']]
     dependency_edges=imports+neural
-    return {'nodes':len(nodes),'edges':len(edges),'dependencies':imports,'neural_links':neural,'contains_links':contains,'dependency_density':round((2*dependency_edges)/max(1,len(nodes)*(len(nodes)-1)),4),'density':round((2*len(edges))/max(1,len(nodes)*(len(nodes)-1)),4)}
+    return {'nodes':len(nodes),'edges':len(edges),'dependencies':imports,'neural_links':neural,'contains_links':contains,'dependency_density':round((2*dependency_edges)/max(1,len(nodes)*(len(nodes)-1)),4),'density':round(dependency_edges/max(1,len(nodes)),3)}
