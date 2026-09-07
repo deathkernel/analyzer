@@ -6,39 +6,48 @@ from scanner import import_tokens, rel
 
 EXT_CANDIDATES=('.py','.js','.jsx','.ts','.tsx','.java','.kt','.c','.h','.cpp','.hpp','.cs','.go','.rs','.rb','.php')
 
+def _file_candidates(base):
+    return [base, *[Path(str(base)+ext) for ext in EXT_CANDIDATES], base/'__init__.py', base/'index.js', base/'index.ts', base/'index.tsx']
+
 def resolve_import(token, src, root, by_stem, by_name):
     clean=token.replace('\\','/').strip()
     candidates=[]
     if clean.startswith('.'):
-        base=(src.parent / clean).resolve()
-        candidates.append(base)
-        candidates.extend(Path(str(base)+ext) for ext in EXT_CANDIDATES)
-        candidates += [base/'__init__.py',base/'index.js',base/'index.ts',base/'index.tsx']
+        level=len(clean)-len(clean.lstrip('.'))
+        module=clean[level:].lstrip('/')
+        base=src.parent
+        for _ in range(max(0,level-1)):
+            base=base.parent
+        if module:
+            candidates.extend(_file_candidates(base/module.replace('.','/')))
+        else:
+            # A bare relative package import cannot identify a file by itself.
+            # import_tokens emits .name for `from . import name`.
+            return None
     else:
         normalized=clean.lstrip('./').lower()
         module_path=normalized.replace('.','/')
-        # Exact module identity always wins: pkg.alpha -> pkg/alpha.py.
-        for key in (normalized, module_path):
-            value=by_name.get(key)
-            if isinstance(value,list): candidates.extend(value)
-            elif value: candidates.append(value)
-            for suffix in ('.py','.js','.jsx','.ts','.tsx','.java','.kt','.go','.rs'):
-                value=by_name.get(key+suffix)
-                if isinstance(value,list): candidates.extend(value)
-                elif value: candidates.append(value)
-            value=by_name.get(key+'/__init__.py')
-            if isinstance(value,list): candidates.extend(value)
-            elif value: candidates.append(value)
-        # Basename fallback is allowed only when unambiguous.
+        for key in (normalized,module_path):
+            for candidate in _file_candidates(root/key):
+                value=by_name.get(str(candidate.relative_to(root)).replace('\\','/').lower())
+                if value:
+                    candidates.extend(value if isinstance(value,list) else [value])
+            for candidate_key in (key,key+'.py',key+'.js',key+'.jsx',key+'.ts',key+'.tsx',key+'.java',key+'.kt',key+'.go',key+'.rs',key+'/__init__.py'):
+                value=by_name.get(candidate_key)
+                if value:
+                    candidates.extend(value if isinstance(value,list) else [value])
+        # Basename fallback is intentionally conservative: if multiple local
+        # files share a stem, `import util` is ambiguous and creates no edge.
         last=normalized.split('/')[-1].split('.')[-1]
         matches=by_stem.get(last,[])
-        if len(matches)==1: candidates.append(matches[0])
+        if len(matches)==1:
+            candidates.append(matches[0])
     seen=set()
     for c in candidates:
         if not c or c in seen: continue
         seen.add(c)
         try:
-            if c.exists() and root in c.parents: return c
+            if c.is_file() and root in c.parents: return c
         except OSError: continue
     return None
 
@@ -136,8 +145,7 @@ def build_graph(root,fs,contents):
             if e not in seen:seen.add(e);edges.append({'source':e[0],'target':e[1],'kind':'contains'})
     by_stem=defaultdict(list);by_name=defaultdict(list)
     for f in fs:
-        rp=rel(root,f).lower();by_stem[f.stem.lower()].append(f);by_name[rp].append(f)
-        by_name[f.name.lower()].append(f)
+        rp=rel(root,f).lower();by_stem[f.stem.lower()].append(f);by_name[rp].append(f);by_name[f.name.lower()].append(f)
     for f in fs:
         rp=rel(root,f);nid='@file:'+rp;folder='/'.join(rp.split('/')[:-1]) or '.';nodes[nid]={'id':nid,'label':f.name,'language':f.suffix.lower(),'kind':'file','path':rp,'lines':len(contents[f].splitlines())}
         e=('@folder:'+folder,nid)
