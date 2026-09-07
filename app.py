@@ -31,6 +31,7 @@ ASSETS={
     "/graph-controls-plus.css":("graph-controls-plus.css","text/css; charset=utf-8"),
     "/forge-ui.js":("forge-ui.js","application/javascript; charset=utf-8"),
     "/graph-controls-plus.js":("graph-controls-plus.js","application/javascript; charset=utf-8"),
+    "/exception-ui.js":("exception-ui.js","application/javascript; charset=utf-8"),
 }
 
 def stamp():return datetime.now().strftime("%H:%M:%S")
@@ -80,8 +81,7 @@ class Forge:
             exception_report=analyze_exceptions(files_abs,contents,self.project)
             issues=list(result["issues"])+list(exception_report["findings"])
             sev=Counter(x["severity"] for x in issues);self.scan_id+=1;tests=result["tests"]
-            base_health=result["health"]
-            exception_health=exception_report["score"]
+            base_health=result["health"];exception_health=exception_report["score"]
             health=max(0,min(base_health,round((base_health*0.8)+(exception_health*0.2))))
             test_ratio=round(100*len(tests)/max(1,len(result["files"])),1)
             history_item={"scan":self.scan_id,"time":stamp(),"health":health,"issues":len(issues),"critical":sev.get("CRITICAL",0),"high":sev.get("HIGH",0)}
@@ -166,16 +166,13 @@ class Handler(BaseHTTPRequestHandler):
 def github_project(url):
     if not (url.startswith("https://github.com/") or url.startswith("http://github.com/") or url.startswith("git@github.com:")):
         raise ValueError("Only GitHub repository URLs are supported.")
-    base=Path(tempfile.mkdtemp(prefix="forge-github-"))
-    target=base/"repository"
+    base=Path(tempfile.mkdtemp(prefix="forge-github-"));target=base/"repository"
     print(f"FORGE // cloning {url}")
-    try:
-        subprocess.run(["git","clone","--depth","1","--no-tags",url,str(target)],check=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    try:subprocess.run(["git","clone","--depth","1","--no-tags",url,str(target)],check=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     except FileNotFoundError:
         shutil.rmtree(base,ignore_errors=True);raise RuntimeError("Git is not installed or not available on PATH.")
     except subprocess.CalledProcessError as exc:
-        output=(exc.stdout or "").strip();shutil.rmtree(base,ignore_errors=True)
-        raise RuntimeError("GitHub clone failed"+(": "+output[-500:] if output else "."))
+        output=(exc.stdout or "").strip();shutil.rmtree(base,ignore_errors=True);raise RuntimeError("GitHub clone failed"+(": "+output[-500:] if output else "."))
     return target,base
 
 def choose_project():
