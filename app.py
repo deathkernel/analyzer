@@ -79,7 +79,11 @@ class Forge:
             contents={f:read_text(f) for f in files_abs};nodes,edges=build_graph(self.project,files_abs,contents);gm=graph_metrics(nodes,edges)
             intel=intelligence_report(nodes,edges,contents)
             exception_report=analyze_exceptions(files_abs,contents,self.project)
-            issues=list(result["issues"])+list(exception_report["findings"])
+            issues=[];seen_issue_keys=set()
+            for item in list(result["issues"])+list(exception_report["findings"]):
+                key=(item.get("type"),item.get("file"),item.get("line"),item.get("title"))
+                if key not in seen_issue_keys:
+                    seen_issue_keys.add(key);issues.append(item)
             sev=Counter(x["severity"] for x in issues);self.scan_id+=1;tests=result["tests"]
             base_health=result["health"];exception_health=exception_report["score"]
             health=max(0,min(base_health,round((base_health*0.8)+(exception_health*0.2))))
