@@ -12,7 +12,6 @@ SECRET=re.compile(r'''(?i)(api[_-]?key|client[_-]?secret|secret|password|passwd|
 TEST=re.compile(r'(^|[/\\])(tests?|specs?|fixtures?)([/\\]|$)|(^|[/\\])test_[^/\\]+|[^/\\]+_(test|spec)\.[^.]+$',re.I)
 PLACEHOLDERS=('example','sample','dummy','placeholder','changeme','your_','replace_me','<your')
 
-
 def rel(root,p):
     try:return str(p.relative_to(root)).replace('\\','/')
     except ValueError:return str(p).replace('\\','/')
@@ -113,9 +112,30 @@ def analyze(root):
 def mbytes(text):return len(text.encode('utf-8',errors='ignore'))
 
 def import_tokens(text,p):
-    pats={'.py':[r'^\s*from\s+([\w.]+)\s+import\s+([\w*]+)',r'^\s*import\s+([\w.]+)'],'.js':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.jsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.ts':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.tsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.java':[r'^\s*import\s+([\w.]+)'],'.kt':[r'^\s*import\s+([\w.]+)'],'.c':[r'#include\s*[<"]([^>"]+)'],'.h':[r'#include\s*[<"]([^>"]+)'],'.cpp':[r'#include\s*[<"]([^>"]+)'],'.hpp':[r'#include\s*[<"]([^>"]+)'],'.go':[r'"([\w./-]+)"'],'.rs':[r'\b(?:mod|use)\s+([\w:]+)'],'.rb':[r'require\s+["\'](.+?)["\']'],'.php':[r'(?:require|include)(?:_once)?\s*\(?\s*["\'](.+?)["\']']};out=[]
+    if p.suffix.lower()=='.py':
+        try:
+            tree=ast.parse(text,filename=str(p))
+        except SyntaxError:
+            tree=None
+        if tree is not None:
+            out=[]
+            nodes=[n for n in ast.walk(tree) if isinstance(n,(ast.Import,ast.ImportFrom))]
+            nodes.sort(key=lambda n:(getattr(n,'lineno',0),getattr(n,'col_offset',0)))
+            for node in nodes:
+                if isinstance(node,ast.Import):
+                    for alias in node.names:
+                        out.append(alias.name)
+                else:
+                    base='.'*node.level+(node.module or '')
+                    for alias in node.names:
+                        if alias.name=='*':
+                            continue
+                        out.append(f'{base}.{alias.name}' if base else alias.name)
+                    if base:
+                        out.append(base)
+            return list(dict.fromkeys(out))
+    pats={'.js':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.jsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.ts':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.tsx':[r'(?:from|import)\s*["\'](.+?)["\']',r'require\(\s*["\'](.+?)["\']'],'.java':[r'^\s*import\s+([\w.]+)'],'.kt':[r'^\s*import\s+([\w.]+)'],'.c':[r'#include\s*[<"]([^>"]+)'],'.h':[r'#include\s*[<"]([^>"]+)'],'.cpp':[r'#include\s*[<"]([^>"]+)'],'.hpp':[r'#include\s*[<"]([^>"]+)'],'.go':[r'"([\w./-]+)"'],'.rs':[r'\b(?:mod|use)\s+([\w:]+)'],'.rb':[r'require\s+["\'](.+?)["\']'],'.php':[r'(?:require|include)(?:_once)?\s*\(?\s*["\'](.+?)["\']']}
+    out=[]
     for pat in pats.get(p.suffix.lower(),[]):
-        for match in re.findall(pat,text,re.M):
-            if p.suffix.lower()=='.py' and isinstance(match,tuple):base,item=match;out.append(f'{base}.{item}');out.append(base)
-            else:out.append(match)
+        for match in re.findall(pat,text,re.M):out.append(match)
     return list(dict.fromkeys(out))
