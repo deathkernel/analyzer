@@ -1,16 +1,18 @@
-# PROJECT FORGE
+# CodeFlow
 
-Local, read-only, polyglot code-intelligence cockpit.
+Local, read-only, polyglot code-flow intelligence cockpit.
+
+## Core idea
+
+CodeFlow analyzes a project and turns its discovered architecture, dependencies, semantic relationships, tracing paths and code signals into an interactive n8n-style visual flow map. The graph is generated from the codebase; it is not a manually authored workflow.
 
 ## Architecture
 
-- `app.py` — local HTTP server, watcher, API surface, orchestration.
+- `app.py` — local HTTP server, watcher, API surface and CodeFlow orchestration.
 - `scanner.py` — language detection, source discovery, Python AST checks, security/quality heuristics, metrics and project DNA.
 - `graph_engine.py` — dependency extraction, semantic framework relationships, folder topology, layered graph layout and graph metrics.
-- `index.html` — Forge command-center UI, source explorer, search, security radar, evolution telemetry and interactive neural graph.
-- `style.css` — base cinematic visual system.
-
-The project is split by responsibility so new analysis engines can be added without turning one file into a monolith.
+- `index.html` — CodeFlow command-center UI, source explorer, search, security radar, evolution telemetry and interactive neural flow graph.
+- `style.css` — base visual system.
 
 ## Current capabilities
 
@@ -25,19 +27,13 @@ The project is split by responsibility so new analysis engines can be added with
 - Global code search.
 - Security radar.
 - Dependency + folder architecture graph.
-- Semantic neural architecture graph that infers runtime relationships such as entrypoint → routes, routes → database, route → template, template → asset and template composition.
-- A dedicated `FRESHERFLOW NEURAL` graph mode for visualizing the architecture patterns used by the FresherFlow Flask project.
+- Semantic neural flow graph that infers runtime relationships such as entrypoint → routes, routes → database, route → template, template → asset and template composition.
 - Node dragging, zoom, center, tracing, animated dependency flow, live packet HUD and graph telemetry.
 - Responsive cockpit layout for smaller screens.
-- Hardened asset serving for every UI stylesheet/script used by the cockpit.
 - Stable multi-file import resolution with ambiguity-aware stem matching and Python from-import support.
 - Graph interaction fixes: one zoom controller, safe render scheduling, bounded node dragging and correct hot-node highlighting.
 - More meaningful duplication scoring based on repeated normalized lines rather than line length alone.
 - Regression tests for secret finding de-duplication, literal division-by-zero detection, import graph resolution and token extraction.
-
-## FresherFlow neural map
-
-Forge recognizes common FresherFlow-style Flask conventions without executing the target project. For a FresherFlow checkout, the neural graph can expose the main application bootstrap, authentication/student/employer route modules, database layer, templates and static assets as connected architectural signals. The underlying analysis remains read-only.
 
 ## Run
 
@@ -45,9 +41,4 @@ Forge recognizes common FresherFlow-style Flask conventions without executing th
 python app.py
 ```
 
-Forge opens a local browser window and asks for the project folder to analyze. The target project is never modified by the analyzer.
-
-
-## Documentation
-
-- [Professional Feature & Technical Capability Report](docs/Project_Forge_Professional_Report.md)
+CodeFlow opens a local browser window and asks for the project folder to analyze. The target project is never modified by the analyzer.
