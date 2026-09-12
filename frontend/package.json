@@ -1,0 +1,13 @@
+{
+  "name": "codeflow-frontend",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"react": "latest", "react-dom": "latest"},
+  "devDependencies": {"typescript": "latest", "vite": "latest", "@types/react": "latest", "@types/react-dom": "latest"}
+}
