@@ -24,7 +24,7 @@ HOST='127.0.0.1'
 DEFAULT_PORT=8765
 INTERVAL=1.0
 HERE=Path(__file__).resolve().parent
-FORGE=None
+CODEFLOW=None
 
 ASSETS={
     '/style.css':('style.css','text/css; charset=utf-8'),
@@ -46,7 +46,7 @@ def pick_port(preferred=DEFAULT_PORT):
             except OSError:continue
     raise OSError('Could not find a free local port.')
 
-class Forge:
+class CodeFlow:
     def __init__(self,project:Path):
         self.project=project.resolve();self.lock=threading.RLock();self.scan_id=0
         self.state={'project':str(self.project),'watching':False,'scan':0,'duration_ms':0,'health':100,
@@ -148,21 +148,19 @@ class Handler(BaseHTTPRequestHandler):
             length=int(self.headers.get('Content-Length','0'));payload=json.loads(self.rfile.read(length) or '{}')
             requested=payload.get('fixes',[])
             if not isinstance(requested,list) or not requested:return self.send_json({'error':'No fixes selected.'},400)
-            applied=[];changed=[]
-            grouped={}
+            applied=[];changed=[];grouped={}
             for fx in requested:
                 if not isinstance(fx,dict):continue
-                relpath=str(fx.get('file','')).replace('\\','/')
-                target=(FORGE.project/relpath).resolve()
-                if FORGE.project not in target.parents or not target.is_file():continue
+                relpath=str(fx.get('file','')).replace('\\','/');target=(CODEFLOW.project/relpath).resolve()
+                if CODEFLOW.project not in target.parents or not target.is_file():continue
                 grouped.setdefault(target,[]).append(fx)
             for target,fixes in grouped.items():
-                text=read_text(target);allowed=build_file_fixes(FORGE.project,target,text);allowed_by_id={x['id']:x for x in allowed};selected=[allowed_by_id[x['id']] for x in fixes if x.get('id') in allowed_by_id]
+                text=read_text(target);allowed=build_file_fixes(CODEFLOW.project,target,text);allowed_by_id={x['id']:x for x in allowed};selected=[allowed_by_id[x['id']] for x in fixes if x.get('id') in allowed_by_id]
                 new_text,done=apply_fixes(text,selected)
                 if new_text!=text:
-                    target.write_text(new_text,encoding='utf-8');changed.append(rel(FORGE.project,target));applied.extend([dict(x,file=rel(FORGE.project,target)) for x in done])
+                    target.write_text(new_text,encoding='utf-8');changed.append(rel(CODEFLOW.project,target));applied.extend([dict(x,file=rel(CODEFLOW.project,target)) for x in done])
             if changed:
-                FORGE.emit(f'AUTO FIX // applied {len(applied)} fixes // {len(changed)} files');FORGE.scan()
+                CODEFLOW.emit(f'AUTO FIX // applied {len(applied)} fixes // {len(changed)} files');CODEFLOW.scan()
             return self.send_json({'ok':True,'applied':applied,'changed_files':changed,'count':len(applied)})
         except Exception as exc:return self.send_json({'error':f'{type(exc).__name__}: {exc}'},500)
     def do_GET(self):
@@ -172,21 +170,21 @@ class Handler(BaseHTTPRequestHandler):
             if p in ASSETS:
                 name,ctype=ASSETS[p];return self.static(name,ctype)
             if p=='/api/state':
-                with FORGE.lock:return self.send_json(dict(FORGE.state))
+                with CODEFLOW.lock:return self.send_json(dict(CODEFLOW.state))
             if p=='/api/graph':
-                with FORGE.lock:return self.send_json(dict(FORGE.state.get('graph',{})))
-            if p=='/api/search':return self.send_json({'results':FORGE.search(qs.get('q',[''])[0])})
+                with CODEFLOW.lock:return self.send_json(dict(CODEFLOW.state.get('graph',{})))
+            if p=='/api/search':return self.send_json({'results':CODEFLOW.search(qs.get('q',[''])[0])})
             if p=='/api/file':
-                path=unquote(qs.get('path',[''])[0]).replace('\\','/');target=(FORGE.project/path).resolve()
-                if FORGE.project not in target.parents or not target.is_file():return self.send_json({'error':'file not found'},404)
-                return self.send_json({'path':rel(FORGE.project,target),'language':target.suffix.lower(),'content':read_text(target),'fixes':build_file_fixes(FORGE.project,target,read_text(target))})
-            if p=='/api/health':return self.send_json({'ok':True,'scan':FORGE.scan_id,'error':FORGE.state.get('error')})
+                path=unquote(qs.get('path',[''])[0]).replace('\\','/');target=(CODEFLOW.project/path).resolve()
+                if CODEFLOW.project not in target.parents or not target.is_file():return self.send_json({'error':'file not found'},404)
+                return self.send_json({'path':rel(CODEFLOW.project,target),'language':target.suffix.lower(),'content':read_text(target),'fixes':build_file_fixes(CODEFLOW.project,target,read_text(target))})
+            if p=='/api/health':return self.send_json({'ok':True,'scan':CODEFLOW.scan_id,'error':CODEFLOW.state.get('error')})
             return self.send_json({'error':'not found','path':p},404)
         except Exception as exc:return self.send_json({'error':f'{type(exc).__name__}: {exc}'},500)
 
 def github_project(url):
     if not (url.startswith('https://github.com/') or url.startswith('http://github.com/') or url.startswith('git@github.com:')):raise ValueError('Only GitHub repository URLs are supported.')
-    base=Path(tempfile.mkdtemp(prefix='forge-github-'));target=base/'repository';print(f'FORGE // cloning {url}')
+    base=Path(tempfile.mkdtemp(prefix='codeflow-github-'));target=base/'repository';print(f'CODEFLOW // cloning {url}')
     try:subprocess.run(['git','clone','--depth','1','--no-tags',url,str(target)],check=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     except FileNotFoundError:shutil.rmtree(base,ignore_errors=True);raise RuntimeError('Git is not installed or not available on PATH.')
     except subprocess.CalledProcessError as exc:
@@ -197,29 +195,29 @@ def choose_project():
     try:
         import tkinter as tk
         from tkinter import filedialog
-        root=tk.Tk();root.withdraw();root.attributes('-topmost',True);selected=filedialog.askdirectory(title='PROJECT FORGE // Select project folder');root.destroy()
+        root=tk.Tk();root.withdraw();root.attributes('-topmost',True);selected=filedialog.askdirectory(title='CODEFLOW // Select project folder');root.destroy()
         if selected:return Path(selected)
     except Exception as exc:print(f'Folder dialog unavailable: {exc}')
-    print('\nPROJECT FORGE // Enter the project folder path');value=input('Project path: ').strip().strip('"')
+    print('\nCODEFLOW // Enter the project folder path');value=input('Project path: ').strip().strip('"')
     if not value:raise SystemExit('No project selected.')
     return Path(value)
 
 def main():
-    global FORGE
+    global CODEFLOW
     temp_workspace=None
     if len(sys.argv)>=3 and sys.argv[1].lower()=='--github':
         try:project,temp_workspace=github_project(sys.argv[2])
-        except Exception as exc:raise SystemExit(f'FORGE // {exc}')
+        except Exception as exc:raise SystemExit(f'CODEFLOW // {exc}')
     else:project=choose_project()
     if not project.exists() or not project.is_dir():raise SystemExit(f'Invalid project folder: {project}')
-    port=pick_port();FORGE=Forge(project);threading.Thread(target=FORGE.watch,daemon=True,name='forge-watcher').start();server=ThreadingHTTPServer((HOST,port),Handler);url=f'http://{HOST}:{port}'
-    print('='*62);print('PROJECT FORGE // LOCAL CODE INTELLIGENCE');print(f'TARGET : {project}');print(f'UI     : {url}');print('STOP   : Ctrl+C');print('='*62)
+    port=pick_port();CODEFLOW=CodeFlow(project);threading.Thread(target=CODEFLOW.watch,daemon=True,name='codeflow-watcher').start();server=ThreadingHTTPServer((HOST,port),Handler);url=f'http://{HOST}:{port}'
+    print('='*62);print('CODEFLOW // CODEBASE FLOW INTELLIGENCE');print(f'TARGET : {project}');print(f'UI     : {url}');print('STOP   : Ctrl+C');print('='*62)
     try:webbrowser.open(url)
     except Exception:pass
     try:server.serve_forever()
-    except KeyboardInterrupt:print('\nFORGE // shutting down')
+    except KeyboardInterrupt:print('\nCODEFLOW // shutting down')
     finally:
-        FORGE.live=False;server.server_close()
+        CODEFLOW.live=False;server.server_close()
         if temp_workspace:shutil.rmtree(temp_workspace,ignore_errors=True)
 
 if __name__=='__main__':main()
