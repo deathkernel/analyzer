@@ -10,45 +10,30 @@ def _file_candidates(base):
     return [base, *[Path(str(base)+ext) for ext in EXT_CANDIDATES], base/'__init__.py', base/'index.js', base/'index.ts', base/'index.tsx']
 
 def resolve_import(token, src, root, by_stem, by_name):
-    clean=token.replace('\\','/').strip()
-    candidates=[]
+    clean=token.replace('\\','/').strip();candidates=[]
     if clean.startswith('.'):
-        level=len(clean)-len(clean.lstrip('.'))
-        module=clean[level:].lstrip('/')
-        base=src.parent
-        for _ in range(max(0,level-1)):
-            base=base.parent
-        if module:
-            candidates.extend(_file_candidates(base/module.replace('.','/')))
-        else:
-            # A bare relative package import cannot identify a file by itself.
-            # import_tokens emits .name for `from . import name`.
-            return None
+        level=len(clean)-len(clean.lstrip('.'));module=clean[level:].lstrip('/');base=src.parent
+        for _ in range(max(0,level-1)):base=base.parent
+        if module:candidates.extend(_file_candidates(base/module.replace('.','/')))
+        else:return None
     else:
-        normalized=clean.lstrip('./').lower()
-        module_path=normalized.replace('.','/')
+        normalized=clean.lstrip('./').lower();module_path=normalized.replace('.','/')
         for key in (normalized,module_path):
             for candidate in _file_candidates(root/key):
                 value=by_name.get(str(candidate.relative_to(root)).replace('\\','/').lower())
-                if value:
-                    candidates.extend(value if isinstance(value,list) else [value])
+                if value:candidates.extend(value if isinstance(value,list) else [value])
             for candidate_key in (key,key+'.py',key+'.js',key+'.jsx',key+'.ts',key+'.tsx',key+'.java',key+'.kt',key+'.go',key+'.rs',key+'/__init__.py'):
                 value=by_name.get(candidate_key)
-                if value:
-                    candidates.extend(value if isinstance(value,list) else [value])
-        # Basename fallback is intentionally conservative: if multiple local
-        # files share a stem, `import util` is ambiguous and creates no edge.
-        last=normalized.split('/')[-1].split('.')[-1]
-        matches=by_stem.get(last,[])
-        if len(matches)==1:
-            candidates.append(matches[0])
+                if value:candidates.extend(value if isinstance(value,list) else [value])
+        last=normalized.split('/')[-1].split('.')[-1];matches=by_stem.get(last,[])
+        if len(matches)==1:candidates.append(matches[0])
     seen=set()
     for c in candidates:
-        if not c or c in seen: continue
+        if not c or c in seen:continue
         seen.add(c)
         try:
-            if c.is_file() and root in c.parents: return c
-        except OSError: continue
+            if c.is_file() and root in c.parents:return c
+        except OSError:continue
     return None
 
 def _path_node(root,path,kind='file'):
@@ -105,13 +90,49 @@ def _semantic_edges(root,fs,contents,nodes,seen):
         else:n['role']='module'
     return edges
 
+def _extract_symbol_flow(root,fs,contents,nodes,seen):
+    edges=[]
+    def add(source,target,relation='calls',confidence='ast'):
+        if source==target or source not in nodes or target not in nodes:return
+        key=(source,target,relation)
+        if key in seen:return
+        seen.add(key);edges.append({'source':source,'target':target,'kind':'flow','relation':relation,'confidence':confidence})
+    py_defs={}
+    for f in fs:
+        if f.suffix.lower()!='.py':continue
+        try:tree=ast.parse(contents.get(f,''))
+        except Exception:continue
+        path_node=_path_node(root,f);local=set()
+        for node in ast.walk(tree):
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+                local.add(node.name);py_defs.setdefault(node.name,[]).append(path_node)
+        for node in ast.walk(tree):
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                for call in ast.walk(node):
+                    if isinstance(call,ast.Call):
+                        callee=call.func.id if isinstance(call.func,ast.Name) else call.func.attr if isinstance(call.func,ast.Attribute) else None
+                        if callee and callee in py_defs:
+                            for target_file in py_defs[callee][:4]:add(path_node,target_file,f'calls:{callee}')
+                for branch in ast.walk(node):
+                    if isinstance(branch,(ast.If,ast.For,ast.While,ast.Try,ast.Match)):
+                        add(path_node,path_node,f'control:{type(branch).__name__}',confidence='ast-local')
+    for f in fs:
+        if f.suffix.lower() not in ('.js','.jsx','.ts','.tsx'):continue
+        text=contents.get(f,'');src=_path_node(root,f)
+        import re
+        defs=re.findall(r'\b(?:function\s+|(?:const|let|var)\s+)([A-Za-z_$][\w$]*)\s*(?:=\s*\([^)]*\)\s*=>|\()',text)
+        known=set(defs)
+        for name in sorted(known):
+            if re.search(rf'\b{name}\s*\(',text):add(src,src,f'calls:{name}',confidence='text-local')
+    return edges
+
 def _layered_positions(nodes,edges):
-    useful={n['id'] for n in nodes};directed=[e for e in edges if e['kind'] in ('import','neural') and e['source'] in useful and e['target'] in useful];out=defaultdict(list);indeg=Counter()
+    useful={n['id'] for n in nodes};directed=[e for e in edges if e['kind'] in ('import','neural','flow') and e['source'] in useful and e['target'] in useful];out=defaultdict(list);indeg=Counter()
     for e in directed:out[e['source']].append(e['target']);indeg[e['target']]+=1
     q=deque(sorted([n for n in useful if indeg[n]==0]));rank={n:0 for n in q};remaining=set(useful)
     while q:
         n=q.popleft();remaining.discard(n)
-        for m in sorted(set(out[n])):rank[m]=max(rank.get(m,0),rank[n]+1);indeg[m]-=1; q.append(m) if indeg[m]==0 else None
+        for m in sorted(set(out[n])):rank[m]=max(rank.get(m,0),rank[n]+1);indeg[m]-=1;q.append(m) if indeg[m]==0 else None
     for n in sorted(remaining):
         neigh=[rank.get(x,0) for x in out[n]]+[rank.get(e['source'],0) for e in directed if e['target']==n];rank[n]=(min(neigh)+1) if neigh else 0
     buckets=defaultdict(list)
@@ -155,14 +176,17 @@ def build_graph(root,fs,contents):
             if target and target!=f:
                 e=(nid,'@file:'+rel(root,target))
                 if e not in seen:seen.add(e);edges.append({'source':e[0],'target':e[1],'kind':'import','token':token})
-    edges.extend(_semantic_edges(root,fs,contents,nodes,seen));rank,positions=_layered_positions(list(nodes.values()),edges)
+    edges.extend(_semantic_edges(root,fs,contents,nodes,seen));edges.extend(_extract_symbol_flow(root,fs,contents,nodes,seen));rank,positions=_layered_positions(list(nodes.values()),edges)
     for n in nodes:nodes[n].update(positions.get(n,{'x':110,'y':40}),rank=rank.get(n,0))
     return list(nodes.values()),edges
+
+def graph_metrics(nodes,edges):
+    kinds=Counter(e['kind'] for e in edges);return {'nodes':len(nodes),'edges':len(edges),'imports':kinds.get('import',0),'semantic':kinds.get('neural',0),'flow':kinds.get('flow',0),'contains':kinds.get('contains',0),'density':round(len(edges)/max(1,len(nodes)),2)}
 
 def _cycle_components(nodes,edges):
     ids={n['id'] for n in nodes};adj=defaultdict(list)
     for e in edges:
-        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:adj[e['source']].append(e['target'])
+        if e['kind'] in ('import','neural','flow') and e['source'] in ids and e['target'] in ids:adj[e['source']].append(e['target'])
     index=0;stack=[];onstack=set();indices={};low={};components=[]
     def visit(v):
         nonlocal index
@@ -185,7 +209,7 @@ def _impact(nodes,edges,focus_id=None):
     if not focus_id:return {'focused':None,'upstream':[],'downstream':[],'blast_radius':0}
     incoming=defaultdict(list);outgoing=defaultdict(list)
     for e in edges:
-        if e['kind'] in ('import','neural'):outgoing[e['source']].append(e['target']);incoming[e['target']].append(e['source'])
+        if e['kind'] in ('import','neural','flow'):outgoing[e['source']].append(e['target']);incoming[e['target']].append(e['source'])
     def walk(start,adj):
         seen=set();q=deque([start])
         while q:
@@ -199,7 +223,7 @@ def _impact(nodes,edges,focus_id=None):
 def _xray(nodes,edges):
     roles=Counter(n.get('role','module') for n in nodes);ids={n['id'] for n in nodes};adjacency=defaultdict(list)
     for e in edges:
-        if e['kind'] in ('import','neural') and e['source'] in ids and e['target'] in ids:adjacency[e['source']].append(e['target'])
+        if e['kind'] in ('import','neural','flow') and e['source'] in ids and e['target'] in ids:adjacency[e['source']].append(e['target'])
     entry=[n for n in nodes if n.get('role')=='entrypoint'];data={n['id'] for n in nodes if n.get('role')=='data'};paths=[]
     for e in entry:
         q=deque([(e['id'],[e.get('path',e['label'])])]);seen={e['id']}
@@ -213,9 +237,9 @@ def _xray(nodes,edges):
     return {'roles':dict(roles),'entrypoints':[n.get('path',n.get('label')) for n in entry],'data_nodes':len(data),'flows':paths[:30]}
 
 def _dead_code(nodes,edges,contents=None):
-    contents=contents or {};incoming=Counter(e['target'] for e in edges if e['kind'] in ('import','neural'));candidates=[]
+    contents=contents or {};incoming=Counter(e['target'] for e in edges if e['kind'] in ('import','neural','flow'));candidates=[]
     for n in nodes:
-        if n.get('kind')=='file' and incoming[n['id']]==0 and n.get('role')!='entrypoint':candidates.append({'path':n.get('path'),'reason':'No inbound dependency edge'})
+        if n.get('kind')=='file' and incoming[n['id']]==0 and n.get('role')!='entrypoint':candidates.append({'path':n.get('path'),'reason':'No inbound flow/dependency edge'})
     if contents:
         for f,text in contents.items():
             if str(getattr(f,'suffix','')).lower()=='.py':
@@ -233,12 +257,3 @@ def _dead_code(nodes,edges,contents=None):
 def intelligence_report(nodes,edges,contents=None,focus_id=None):
     cycles=_cycle_components(nodes,edges)
     return {'cycles':[[next((n.get('path',n.get('label')) for n in nodes if n['id']==i),i) for i in comp] for comp in cycles],'cycle_count':len(cycles),'impact':_impact(nodes,edges,focus_id),'xray':_xray(nodes,edges),'dead_code':_dead_code(nodes,edges,contents)}
-
-def graph_metrics(nodes,edges):
-    deg=Counter();imports=neural=contains=0
-    for e in edges:
-        if e['kind'] in ('import','neural'):deg[e['source']]+=1;deg[e['target']]+=1
-        imports+=e['kind']=='import';neural+=e['kind']=='neural';contains+=e['kind']=='contains'
-    for n in nodes:n['degree']=deg[n['id']]
-    dependency_edges=imports+neural
-    return {'nodes':len(nodes),'edges':len(edges),'dependencies':imports,'neural_links':neural,'contains_links':contains,'dependency_density':round((2*dependency_edges)/max(1,len(nodes)*(len(nodes)-1)),4),'density':round(dependency_edges/max(1,len(nodes)),3)}
