@@ -33,28 +33,28 @@ def _python(path: Path, root: Path, source: str) -> ParsedFile:
 
     class Visitor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.scope: list[str] = []
+            self.scope_ids: list[str] = []
 
-        def _add_symbol(self, node: ast.AST, name: str, kind: NodeType) -> None:
+        def _add_symbol(self, node: ast.AST, name: str, kind: NodeType) -> str:
             line = getattr(node, "lineno", 1)
             end_line = getattr(node, "end_lineno", line)
             node_id = _node_id(relative, kind.value, name)
             nodes.append(CodeNode(id=node_id, type=kind, symbol=name, file=relative, line=line, end_line=end_line, language="python"))
-            parent = _node_id(relative, NodeType.FUNCTION.value, self.scope[-1]) if self.scope else file_id
-            edges.append(CodeEdge(source=parent, target=node_id, type=EdgeType.CONTAINS))
+            edges.append(CodeEdge(source=self.scope_ids[-1] if self.scope_ids else file_id, target=node_id, type=EdgeType.CONTAINS))
+            return node_id
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
-            self._add_symbol(node, node.name, NodeType.CLASS)
-            self.scope.append(node.name)
+            node_id = self._add_symbol(node, node.name, NodeType.CLASS)
+            self.scope_ids.append(node_id)
             self.generic_visit(node)
-            self.scope.pop()
+            self.scope_ids.pop()
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            kind = NodeType.METHOD if self.scope else NodeType.FUNCTION
-            self._add_symbol(node, node.name, kind)
-            self.scope.append(node.name)
+            kind = NodeType.METHOD if self.scope_ids and any(n.type == NodeType.CLASS for n in nodes if n.id == self.scope_ids[-1]) else NodeType.FUNCTION
+            node_id = self._add_symbol(node, node.name, kind)
+            self.scope_ids.append(node_id)
             self.generic_visit(node)
-            self.scope.pop()
+            self.scope_ids.pop()
 
         visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -86,8 +86,7 @@ def _javascript(path: Path, root: Path, source: str) -> ParsedFile:
     declarations: list[tuple[str, NodeType, int]] = []
     for pattern, kind in ((_JS_CLASS, NodeType.CLASS), (_JS_FUNCTION, NodeType.FUNCTION), (_JS_ARROW, NodeType.FUNCTION)):
         for match in pattern.finditer(source):
-            line = source.count("\n", 0, match.start()) + 1
-            declarations.append((match.group(1), kind, line))
+            declarations.append((match.group(1), kind, source.count("\n", 0, match.start()) + 1))
 
     seen: set[str] = set()
     for name, kind, line in sorted(declarations, key=lambda item: item[2]):
